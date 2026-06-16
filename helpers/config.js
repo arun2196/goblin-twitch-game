@@ -1,0 +1,1 @@
+export const GOBBO_VOICE_ENABLED = true;

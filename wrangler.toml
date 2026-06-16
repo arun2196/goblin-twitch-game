@@ -1,0 +1,12 @@
+name = "dawn-voice-d0f9"
+main = "index.js"
+compatibility_date = "2026-06-12"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "goblin_rpg"
+database_id = "f015a3e0-fd53-4a31-bb7d-387bdf1d7461"
+
+[[r2_buckets]]
+binding = "GOBBO_ASSETS"
+bucket_name = "gobbo-assets"
