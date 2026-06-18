@@ -138,12 +138,20 @@ function getGobboPlayerHtml() {
           console.log("Gobbo sound ended");
           isPlaying = false;
           player.src = "";
+          // Immediately check for the next queued sound
+          setTimeout(() => {
+            pollSound();
+          }, 2000);
         };
 
         player.onerror = () => {
           console.error("Audio error:", player.error);
           isPlaying = false;
           player.src = "";
+          // Skip broken sound and continue queue
+          setTimeout(() => {
+            pollSound();
+          }, 2000);
         };
       } catch (err) {
         console.error("Gobbo player error:", err);
@@ -151,7 +159,7 @@ function getGobboPlayerHtml() {
       }
     }
 
-    setInterval(pollSound, 2000);
+    setInterval(pollSound, 30000);
     pollSound();
   </script>
 </body>
