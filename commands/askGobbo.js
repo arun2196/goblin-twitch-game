@@ -158,7 +158,7 @@ async function runAskGobbo({
       player.display_name,
       cleanQuestion,
       answer,
-      chargeGold ? ASK_GOBBO_COST : 0
+      chargeGold ? ASK_GOBBO_COST : 75
     ),
 
     env.DB.prepare(`
