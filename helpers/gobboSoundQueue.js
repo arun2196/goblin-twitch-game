@@ -9,22 +9,23 @@ export async function queueGobboSound(env, soundUrl, r2Key) {
 
 export async function getNextGobboSound(env) {
   const sound = await env.DB.prepare(
-    `SELECT id, sound_url
-     FROM gobbo_sounds
-     WHERE played = 0
-     ORDER BY id ASC
-     LIMIT 1`
-  ).first();
-
-  if (!sound) return null;
-
-  await env.DB.prepare(
     `UPDATE gobbo_sounds
      SET played = 1
-     WHERE id = ?`
-  )
-    .bind(sound.id)
-    .run();
+     WHERE id = (
+       SELECT id
+       FROM gobbo_sounds
+       WHERE played = 0
+       ORDER BY id ASC
+       LIMIT 1
+     )
+     RETURNING id, sound_url`
+  ).first();
 
+  if (!sound) {
+    console.log("Gobbo sound queue empty");
+    return null;
+  }
+
+  console.log("Gobbo sound claimed:", sound.id);
   return sound;
 }
