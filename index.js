@@ -114,15 +114,27 @@ function getGobboPlayerHtml() {
     player.volume = 1.0;
 
     let isPlaying = false;
+    let isPolling = false;
 
-    async function pollSound() {
-      if (isPlaying) return;
+    async function pollSound(reason = "interval") {
+      if (isPlaying || isPolling) {
+        console.log("Poll skipped:", { reason, isPlaying, isPolling });
+        return;
+      }
+
+      isPolling = true;
+      console.log("Polling Gobbo sound:", reason);
 
       try {
-        const res = await fetch("/gobbo/next-sound?ts=" + Date.now());
+        const res = await fetch("/gobbo/next-sound?ts=" + Date.now(), {
+          cache: "no-store"
+        });
+
         const data = await res.json();
 
-        if (!data.ok || !data.sound || !data.sound.url) return;
+        if (!data.ok || !data.sound || !data.sound.url) {
+          return;
+        }
 
         isPlaying = true;
 
@@ -133,34 +145,36 @@ function getGobboPlayerHtml() {
         player.load();
 
         await player.play();
-
-        player.onended = () => {
-          console.log("Gobbo sound ended");
-          isPlaying = false;
-          player.src = "";
-          // Immediately check for the next queued sound
-          setTimeout(() => {
-            pollSound();
-          }, 2000);
-        };
-
-        player.onerror = () => {
-          console.error("Audio error:", player.error);
-          isPlaying = false;
-          player.src = "";
-          // Skip broken sound and continue queue
-          setTimeout(() => {
-            pollSound();
-          }, 2000);
-        };
       } catch (err) {
         console.error("Gobbo player error:", err);
         isPlaying = false;
+        player.src = "";
+      } finally {
+        isPolling = false;
       }
     }
 
-    setInterval(pollSound, 30000);
-    pollSound();
+    player.onended = () => {
+      console.log("Gobbo sound ended");
+      isPlaying = false;
+      player.src = "";
+
+      // Only quick-check after a real sound finishes
+      setTimeout(() => pollSound("after-ended"), 2000);
+    };
+
+    player.onerror = () => {
+      console.error("Audio error:", player.error);
+      isPlaying = false;
+      player.src = "";
+
+      // Do NOT aggressively loop on error
+      setTimeout(() => pollSound("after-error"), 10000);
+    };
+
+    setInterval(() => pollSound("interval"), 30000);
+
+    setTimeout(() => pollSound("initial"), 3000);
   </script>
 </body>
 </html>`;
