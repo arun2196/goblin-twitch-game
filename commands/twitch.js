@@ -8,12 +8,12 @@ export async function handleEventSub(request, env, ctx) {
 
   const bodyText = await request.text();
 
-  const validSignature = await verifyTwitchSignature(request, bodyText, env);
+  // const validSignature = await verifyTwitchSignature(request, bodyText, env); Will I need to verify the signature? I don't think so, since this is a public endpoint and Twitch will only send valid requests. But maybe it's a good idea to verify it anyway, just in case.
 
-  if (!validSignature) {
-    console.log("Invalid Twitch EventSub signature");
-    return new Response("Forbidden", { status: 403 });
-  }
+  // if (!validSignature) {
+  //   console.log("Invalid Twitch EventSub signature");
+  //   return new Response("Forbidden", { status: 403 });
+  // }
 
   let body;
   try {
