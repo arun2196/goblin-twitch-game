@@ -133,48 +133,64 @@ function getGobboPlayerHtml() {
         const data = await res.json();
 
         if (!data.ok || !data.sound || !data.sound.url) {
+          isPolling = false;
           return;
         }
 
-        isPlaying = true;
+        const audioUrl = new URL(
+          data.sound.url,
+          window.location.origin
+        ).href;
 
-        const audioUrl = new URL(data.sound.url, window.location.origin).href;
         console.log("Playing Gobbo sound:", audioUrl);
 
         player.src = audioUrl;
         player.load();
 
+        isPlaying = true;
+
         await player.play();
+
+        isPolling = false;
       } catch (err) {
         console.error("Gobbo player error:", err);
+
         isPlaying = false;
-        player.src = "";
-      } finally {
         isPolling = false;
+        player.src = "";
       }
     }
 
     player.onended = () => {
       console.log("Gobbo sound ended");
+
       isPlaying = false;
       player.src = "";
 
-      // Only quick-check after a real sound finishes
-      setTimeout(() => pollSound("after-ended"), 2000);
+      setTimeout(() => {
+        pollSound("after-ended");
+      }, 2000);
     };
 
     player.onerror = () => {
       console.error("Audio error:", player.error);
+
       isPlaying = false;
+      isPolling = false;
       player.src = "";
 
-      // Do NOT aggressively loop on error
-      setTimeout(() => pollSound("after-error"), 10000);
+      setTimeout(() => {
+        pollSound("after-error");
+      }, 10000);
     };
 
-    setInterval(() => pollSound("interval"), 30000);
+    setInterval(() => {
+      pollSound("interval");
+    }, 30000);
 
-    setTimeout(() => pollSound("initial"), 3000);
+    setTimeout(() => {
+      pollSound("initial");
+    }, 3000);
   </script>
 </body>
 </html>`;
