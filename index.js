@@ -67,6 +67,15 @@ export default {
       }
 
       if (url.pathname === "/gobbo/next-sound") {
+        const allowed = await claimGobboPollSlot(env);
+
+        if (!allowed) {
+          return Response.json({
+            ok: true,
+            sound: null,
+            throttled: true,
+          });
+        }
         const sound = await getNextGobboSound(env);
 
         if (!sound) {
@@ -165,6 +174,7 @@ function getGobboPlayerHtml() {
       console.log("Gobbo sound ended");
 
       isPlaying = false;
+      isPolling = false;
       player.src = "";
 
       setTimeout(() => {
@@ -178,10 +188,6 @@ function getGobboPlayerHtml() {
       isPlaying = false;
       isPolling = false;
       player.src = "";
-
-      setTimeout(() => {
-        pollSound("after-error");
-      }, 10000);
     };
 
     setInterval(() => {
@@ -194,4 +200,33 @@ function getGobboPlayerHtml() {
   </script>
 </body>
 </html>`;
+}
+
+async function claimGobboPollSlot(env) {
+  const now = Date.now();
+  const minGapMs = 1500;
+
+  const updated = await env.DB.prepare(`
+    UPDATE app_state
+    SET value = ?
+    WHERE key = 'gobbo_last_poll'
+      AND value <= ?
+    RETURNING value
+  `)
+    .bind(now, now - minGapMs)
+    .first();
+
+  if (updated) {
+    return true;
+  }
+
+  const inserted = await env.DB.prepare(`
+    INSERT OR IGNORE INTO app_state (key, value)
+    VALUES ('gobbo_last_poll', ?)
+    RETURNING value
+  `)
+    .bind(now)
+    .first();
+
+  return !!inserted;
 }
