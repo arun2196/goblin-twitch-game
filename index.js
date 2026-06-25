@@ -67,6 +67,15 @@ export default {
       }
 
       if (url.pathname === "/gobbo/next-sound") {
+        const allowed = await claimGobboPollSlot(env);
+
+        if (!allowed) {
+          return Response.json({
+            ok: true,
+            sound: null,
+            throttled: true,
+          });
+        }
         const sound = await getNextGobboSound(env);
 
         if (!sound) {
@@ -114,54 +123,110 @@ function getGobboPlayerHtml() {
     player.volume = 1.0;
 
     let isPlaying = false;
+    let isPolling = false;
 
-    async function pollSound() {
-      if (isPlaying) return;
+    async function pollSound(reason = "interval") {
+      if (isPlaying || isPolling) {
+        console.log("Poll skipped:", { reason, isPlaying, isPolling });
+        return;
+      }
+
+      isPolling = true;
+      console.log("Polling Gobbo sound:", reason);
 
       try {
-        const res = await fetch("/gobbo/next-sound?ts=" + Date.now());
+        const res = await fetch("/gobbo/next-sound?ts=" + Date.now(), {
+          cache: "no-store"
+        });
+
         const data = await res.json();
 
-        if (!data.ok || !data.sound || !data.sound.url) return;
+        if (!data.ok || !data.sound || !data.sound.url) {
+          isPolling = false;
+          return;
+        }
 
-        isPlaying = true;
+        const audioUrl = new URL(
+          data.sound.url,
+          window.location.origin
+        ).href;
 
-        const audioUrl = new URL(data.sound.url, window.location.origin).href;
         console.log("Playing Gobbo sound:", audioUrl);
 
         player.src = audioUrl;
         player.load();
 
+        isPlaying = true;
+
         await player.play();
 
-        player.onended = () => {
-          console.log("Gobbo sound ended");
-          isPlaying = false;
-          player.src = "";
-          // Immediately check for the next queued sound
-          setTimeout(() => {
-            pollSound();
-          }, 2000);
-        };
-
-        player.onerror = () => {
-          console.error("Audio error:", player.error);
-          isPlaying = false;
-          player.src = "";
-          // Skip broken sound and continue queue
-          setTimeout(() => {
-            pollSound();
-          }, 2000);
-        };
+        isPolling = false;
       } catch (err) {
         console.error("Gobbo player error:", err);
+
         isPlaying = false;
+        isPolling = false;
+        player.src = "";
       }
     }
 
-    setInterval(pollSound, 30000);
-    pollSound();
+    player.onended = () => {
+      console.log("Gobbo sound ended");
+
+      isPlaying = false;
+      isPolling = false;
+      player.src = "";
+
+      setTimeout(() => {
+        pollSound("after-ended");
+      }, 2000);
+    };
+
+    player.onerror = () => {
+      console.error("Audio error:", player.error);
+
+      isPlaying = false;
+      isPolling = false;
+      player.src = "";
+    };
+
+    setInterval(() => {
+      pollSound("interval");
+    }, 30000);
+
+    setTimeout(() => {
+      pollSound("initial");
+    }, 3000);
   </script>
 </body>
 </html>`;
+}
+
+async function claimGobboPollSlot(env) {
+  const now = Date.now();
+  const minGapMs = 1500;
+
+  const updated = await env.DB.prepare(`
+    UPDATE app_state
+    SET value = ?
+    WHERE key = 'gobbo_last_poll'
+      AND value <= ?
+    RETURNING value
+  `)
+    .bind(now, now - minGapMs)
+    .first();
+
+  if (updated) {
+    return true;
+  }
+
+  const inserted = await env.DB.prepare(`
+    INSERT OR IGNORE INTO app_state (key, value)
+    VALUES ('gobbo_last_poll', ?)
+    RETURNING value
+  `)
+    .bind(now)
+    .first();
+
+  return !!inserted;
 }
