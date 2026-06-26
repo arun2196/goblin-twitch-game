@@ -1,8 +1,70 @@
 import { cleanUsername, cleanDisplayName } from "../helpers/players.js";
 import { randomInt, getRandomInventoryItem } from "../helpers/random.js";
 import { expireOldChallenges } from "../helpers/challenges.js";
-import { getAdvantage, getDuelText } from "../helpers/duels.js";
-import { fillDuelText } from "../helpers/templates.js";
+import { getAdvantage } from "../helpers/duels.js";
+import { generateDuelCommentary } from "../helpers/duelCommentary.js";
+
+function getRarityPower(rarity) {
+  const powers = {
+    desperate: 1,
+    common: 1,
+    uncommon: 2,
+    rare: 3,
+    epic: 4,
+    legendary: 5,
+  };
+
+  return powers[String(rarity || "").toLowerCase()] || 1;
+}
+
+function makePlayerFighter(player) {
+  return {
+    id: null,
+    item_key: "player_self",
+    item_name: player.display_name,
+    item_type: "Mortal",
+    rarity: "desperate",
+    uses_left: null,
+    is_player: true,
+    description:
+      "No champion was available, so the goblin entered the arena personally.",
+  };
+}
+
+function getFighterPower(fighter) {
+  if (fighter.is_player) return 1;
+  return getRarityPower(fighter.rarity);
+}
+
+function getFighterLabel(player, fighter) {
+  if (fighter?.is_player) {
+    return `${player.display_name} personally`;
+  }
+
+  return `${player.display_name}'s ${fighter.item_name}`;
+}
+
+async function damageFighter(env, fighter, brokenItems) {
+  if (!fighter || fighter.is_player || !fighter.id) return;
+
+  const newUses = Number(fighter.uses_left) - 1;
+
+  if (newUses <= 0) {
+    await env.DB.prepare(`DELETE FROM inventory WHERE id = ?`)
+      .bind(fighter.id)
+      .run();
+
+    brokenItems.push(fighter.item_name);
+  } else {
+    await env.DB.prepare(
+      `UPDATE inventory
+       SET uses_left = ?
+       WHERE id = ?`
+    )
+      .bind(newUses, fighter.id)
+      .run();
+  }
+}
 
 export async function handleAccept(env, url) {
   const target = cleanUsername(url.searchParams.get("user"));
@@ -22,7 +84,9 @@ export async function handleAccept(env, url) {
        AND datetime(expires_at) > datetime('now')
      ORDER BY id DESC
      LIMIT 1`
-  ).bind(target).first();
+  )
+    .bind(target)
+    .first();
 
   if (!challenge) {
     return new Response(`${targetDisplay}, you have no pending challenge.`);
@@ -33,98 +97,74 @@ export async function handleAccept(env, url) {
 
   const challengerPlayer = await env.DB.prepare(
     `SELECT * FROM players WHERE username = ?`
-  ).bind(challenger).first();
+  )
+    .bind(challenger)
+    .first();
 
   const targetPlayer = await env.DB.prepare(
     `SELECT * FROM players WHERE username = ?`
-  ).bind(target).first();
+  )
+    .bind(target)
+    .first();
 
   if (!challengerPlayer || !targetPlayer) {
     return new Response("One of the goblins vanished from the hoard.");
   }
 
-  if (challengerPlayer.gold < stake) {
-    await env.DB.prepare(
-      `UPDATE duels SET status = 'cancelled' WHERE id = ?`
-    ).bind(challenge.id).run();
+  if (challengerPlayer.gold < stake || targetPlayer.gold < stake) {
+    await env.DB.prepare(`UPDATE duels SET status = 'cancelled' WHERE id = ?`)
+      .bind(challenge.id)
+      .run();
 
     return new Response(
-      `${challengerPlayer.display_name} no longer has enough gold. Challenge cancelled.`
+      "Challenge cancelled. One goblin no longer has enough gold."
     );
   }
 
-  if (targetPlayer.gold < stake) {
-    await env.DB.prepare(
-      `UPDATE duels SET status = 'cancelled' WHERE id = ?`
-    ).bind(challenge.id).run();
+  const challengerItem =
+    (await getRandomInventoryItem(env, challenger)) ||
+    makePlayerFighter(challengerPlayer);
 
-    return new Response(
-      `${targetPlayer.display_name} no longer has enough gold. Challenge cancelled.`
-    );
-  }
+  const targetItem =
+    (await getRandomInventoryItem(env, target)) ||
+    makePlayerFighter(targetPlayer);
 
-  const challengerItem = await getRandomInventoryItem(env, challenger);
-  const targetItem = await getRandomInventoryItem(env, target);
-
-  if (!challengerItem || !targetItem) {
-    await env.DB.prepare(
-      `UPDATE duels SET status = 'cancelled' WHERE id = ?`
-    ).bind(challenge.id).run();
-
-    return new Response(
-      "Challenge cancelled. One goblin has no items left."
-    );
-  }
-
-  const challengerAdvantage = await getAdvantage(
-    env,
-    challengerItem.item_type,
-    targetItem.item_type
+  const challengerAdvantage = Number(
+    (await getAdvantage(env, challengerItem.item_type, targetItem.item_type)) || 0
   );
 
-  const targetAdvantage = await getAdvantage(
-    env,
-    targetItem.item_type,
-    challengerItem.item_type
+  const targetAdvantage = Number(
+    (await getAdvantage(env, targetItem.item_type, challengerItem.item_type)) || 0
   );
 
-  const challengerRoll = randomInt(1, 100);
-  const targetRoll = randomInt(1, 100);
+  const challengerRoll = randomInt(0, 2);
+  const targetRoll = randomInt(0, 2);
 
-  const challengerScore =
-    challengerRoll + (challengerAdvantage > 0 ? 30 : 0);
+  const challengerPower = getFighterPower(challengerItem);
+  const targetPower = getFighterPower(targetItem);
 
-  const targetScore =
-    targetRoll + (targetAdvantage > 0 ? 30 : 0);
+  const challengerScore = challengerPower + challengerAdvantage + challengerRoll;
+  const targetScore = targetPower + targetAdvantage + targetRoll;
 
   let winner;
   let loser;
   let winnerItem;
   let loserItem;
-  let commentaryCategory = "tie";
+  let tieBreakerUsed = false;
 
   if (challengerScore > targetScore) {
     winner = challengerPlayer;
     loser = targetPlayer;
     winnerItem = challengerItem;
     loserItem = targetItem;
-
-    commentaryCategory =
-      challengerAdvantage > 0 ? "advantage" :
-      targetAdvantage > 0 ? "upset" :
-      "victory";
   } else if (targetScore > challengerScore) {
     winner = targetPlayer;
     loser = challengerPlayer;
     winnerItem = targetItem;
     loserItem = challengerItem;
-
-    commentaryCategory =
-      targetAdvantage > 0 ? "advantage" :
-      challengerAdvantage > 0 ? "upset" :
-      "victory";
   } else {
-    // Rare exact tie: coin flip.
+    tieBreakerUsed = true;
+
     if (Math.random() < 0.5) {
       winner = challengerPlayer;
       loser = targetPlayer;
@@ -136,59 +176,12 @@ export async function handleAccept(env, url) {
       winnerItem = targetItem;
       loserItem = challengerItem;
     }
-
-    commentaryCategory = "tie";
   }
-
-  const introTextRaw = await getDuelText(env, "intro");
-  const mainTextRaw = await getDuelText(
-    env,
-    commentaryCategory,
-    winnerItem.item_type,
-    loserItem.item_type
-  );
-  const victoryTextRaw = await getDuelText(env, "victory");
-
-  const values = {
-    A: challengerPlayer.display_name,
-    B: targetPlayer.display_name,
-    A_ITEM: challengerItem.item_name,
-    B_ITEM: targetItem.item_name,
-    WINNER: winner.display_name,
-    LOSER: loser.display_name,
-    STAKE: String(stake),
-    ITEM: ""
-  };
-
-  const introText = fillDuelText(introTextRaw, values);
-  const mainText = fillDuelText(mainTextRaw, {
-    ...values,
-    A: winner.display_name,
-    B: loser.display_name,
-    A_ITEM: winnerItem.item_name,
-    B_ITEM: loserItem.item_name
-  });
-  const victoryText = fillDuelText(victoryTextRaw, values);
 
   const brokenItems = [];
 
-  for (const item of [challengerItem, targetItem]) {
-    const newUses = Number(item.uses_left) - 1;
-
-    if (newUses <= 0) {
-      await env.DB.prepare(
-        `DELETE FROM inventory WHERE id = ?`
-      ).bind(item.id).run();
-
-      brokenItems.push(item.item_name);
-    } else {
-      await env.DB.prepare(
-        `UPDATE inventory
-         SET uses_left = ?
-         WHERE id = ?`
-      ).bind(newUses, item.id).run();
-    }
-  }
+  await damageFighter(env, challengerItem, brokenItems);
+  await damageFighter(env, targetItem, brokenItems);
 
   const winnerUsername = winner.username;
   const loserUsername = loser.username;
@@ -222,9 +215,14 @@ export async function handleAccept(env, url) {
 
     env.DB.prepare(
       `UPDATE duels
-       SET status = 'completed'
+       SET status = 'completed',
+           accepted_at = CURRENT_TIMESTAMP,
+           result = ?
        WHERE id = ?`
-    ).bind(challenge.id),
+    ).bind(
+      `${winner.display_name} defeated ${loser.display_name}`,
+      challenge.id
+    ),
 
     env.DB.prepare(
       `INSERT INTO events (event_type, message)
@@ -232,26 +230,61 @@ export async function handleAccept(env, url) {
     ).bind(
       "challenge_result",
       `${winner.display_name} defeated ${loser.display_name} for ${stake}g.`
-    )
+    ),
   ]);
+
+  const fallback =
+    `⚔️ ${getFighterLabel(
+      challengerPlayer,
+      challengerItem
+    )} faced ${getFighterLabel(targetPlayer, targetItem)}. ` +
+    `${winner.display_name} wins ${stake}g!`;
+
+  let commentary = fallback;
+
+  try {
+    commentary = await generateDuelCommentary(env, {
+      challenger: {
+        username: challengerPlayer.username,
+        displayName: challengerPlayer.display_name,
+        goldBefore: challengerPlayer.gold,
+      },
+      target: {
+        username: targetPlayer.username,
+        displayName: targetPlayer.display_name,
+        goldBefore: targetPlayer.gold,
+      },
+      challengerFighter: {
+        ...challengerItem,
+        power: challengerPower,
+        roll: challengerRoll,
+        advantage: challengerAdvantage,
+        score: challengerScore,
+      },
+      targetFighter: {
+        ...targetItem,
+        power: targetPower,
+        roll: targetRoll,
+        advantage: targetAdvantage,
+        score: targetScore,
+      },
+      result: {
+        winner: winner.display_name,
+        loser: loser.display_name,
+        stake,
+        tieBreakerUsed,
+        brokenItems,
+      },
+    });
+  } catch (error) {
+    console.log("Duel commentary failed:", error?.message || error);
+  }
 
   let breakText = "";
 
   if (brokenItems.length) {
-    const breakLines = [];
-
-    for (const itemName of brokenItems) {
-      const breakTextRaw = await getDuelText(env, "break");
-      breakLines.push(
-        fillDuelText(breakTextRaw, { ITEM: itemName })
-      );
-    }
-
-    breakText = " " + breakLines.join(" ");
+    breakText = ` Broken: ${brokenItems.join(", ")}.`;
   }
 
-  return new Response(
-    `⚔️ ${introText} ${mainText} ${victoryText} Rolls: ${challengerPlayer.display_name} ${challengerScore}, ${targetPlayer.display_name} ${targetScore}.${breakText}`
-      .slice(0, 490)
-  );
+  return new Response(`${commentary}${breakText}`.slice(0, 490));
 }

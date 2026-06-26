@@ -1,4 +1,9 @@
-import { cleanUsername, cleanDisplayName, getOrCreatePlayer } from "../helpers/players.js";
+import {
+  cleanUsername,
+  cleanDisplayName,
+  getOrCreatePlayer,
+} from "../helpers/players.js";
+
 import { randomInt, pickWeighted } from "../helpers/random.js";
 
 const MAX_INVENTORY_ITEMS = 3;
@@ -15,9 +20,12 @@ export async function handleChest(env, url) {
     `SELECT COUNT(*) AS count
      FROM inventory
      WHERE username = ?`
-  ).bind(username).first();
+  )
+    .bind(username)
+    .first();
 
   const currentGold = Number(player.gold || 0);
+
   let bonusMultiplier = 1;
 
   if (currentGold < 100) bonusMultiplier = 1.6;
@@ -31,34 +39,26 @@ export async function handleChest(env, url) {
     `SELECT *
      FROM items
      WHERE min_gold_bonus <= ?
-     ORDER BY rarity`
-  ).bind(currentGold).all();
+     ORDER BY drop_weight DESC`
+  )
+    .bind(currentGold)
+    .all();
 
   if (!items.results.length) {
     return new Response(
-      "No items exist in the database yet. Add items to the items table first."
+      "No champions exist in the database yet. Add rows to the items table first."
     );
   }
 
-  const weightedItems = items.results.map(item => {
-    let weight = Number(item.drop_weight || 100);
-
-    if (currentGold < 250 && item.rarity === "rare") weight *= 2;
-    if (currentGold < 100 && item.rarity === "rare") weight *= 3;
-    if (currentGold < 100 && item.rarity === "uncommon") weight *= 2;
-
-    return { ...item, drop_weight: weight };
-  });
-
-  const item = pickWeighted(weightedItems);
+  const item = pickWeighted(items.results);
 
   if (inventoryCount.count >= MAX_INVENTORY_ITEMS) {
     const failLines = [
-      "but their bag was already full, so the chest goblin slammed it shut.",
-      "but they had no room, so the loot vanished into goblin bureaucracy.",
-      "but their pockets were full of nonsense, so they got absolutely nothing.",
-      "but inventory law says 3 items only. The loot union rejected the claim.",
-      "but a tiny goblin accountant yelled NO SPACE and confiscated everything."
+      "but their warband was full, so the chest goblin slammed it shut.",
+      "but they had no room, so the champion wandered off to find better management.",
+      "but their pockets were full of nonsense, so the recruit escaped.",
+      "but Goblin Warband Law says 3 champions only. The loot union rejected the claim.",
+      "but a tiny goblin accountant yelled NO SPACE and confiscated everything.",
     ];
 
     const flavor = failLines[randomInt(0, failLines.length - 1)];
@@ -66,15 +66,22 @@ export async function handleChest(env, url) {
     await env.DB.prepare(
       `INSERT INTO events (event_type, message)
        VALUES (?, ?)`
-    ).bind(
-      "chest_failed_full_inventory",
-      `${player.display_name} saw ${foundGold} gold and ${item.item_name}, but their inventory was full.`
-    ).run();
+    )
+      .bind(
+        "chest_failed_full_inventory",
+        `${player.display_name} saw ${foundGold} gold and ${item.item_name}, but their warband was full.`
+      )
+      .run();
 
     return new Response(
-      `${player.display_name} opened a chest and saw ${foundGold}g + ${item.item_name} [${item.item_type}, ${item.rarity}]... ${flavor}`
+      `${player.display_name} opened a chest and saw ${foundGold}g + ${item.item_name} [${item.item_type}, ${item.rarity}]... ${flavor}`.slice(
+        0,
+        490
+      )
     );
   }
+
+  const usesLeft = Number(item.durability || 1);
 
   await env.DB.batch([
     env.DB.prepare(
@@ -86,7 +93,7 @@ export async function handleChest(env, url) {
       item.item_key,
       item.item_name,
       item.item_type,
-      item.durability || 1
+      usesLeft
     ),
 
     env.DB.prepare(
@@ -107,11 +114,14 @@ export async function handleChest(env, url) {
        VALUES (?, ?)`
     ).bind(
       "chest",
-      `${player.display_name} opened a chest and found ${foundGold} gold plus ${item.item_name}.`
-    )
+      `${player.display_name} opened a chest and recruited ${item.item_name}, plus ${foundGold} gold.`
+    ),
   ]);
 
   return new Response(
-    `${player.display_name} opened a chest! Found ${foundGold}g and ${item.item_name} [${item.item_type}, ${item.rarity}, ${item.durability} use].`
+    `${player.display_name} opened a chest! Found ${foundGold}g and recruited ${item.item_name} [${item.item_type}, ${item.rarity}, ${usesLeft} durability].`.slice(
+      0,
+      490
+    )
   );
 }

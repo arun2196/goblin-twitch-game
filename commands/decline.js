@@ -6,7 +6,7 @@ export async function handleDecline(env, url) {
   const targetDisplay = cleanDisplayName(url.searchParams.get("user"));
 
   if (!target) {
-    return new Response("Usage: !decline");
+    return new Response("Usage: !run");
   }
 
   await expireOldChallenges(env);
@@ -19,27 +19,43 @@ export async function handleDecline(env, url) {
        AND datetime(expires_at) > datetime('now')
      ORDER BY id DESC
      LIMIT 1`
-  ).bind(target).first();
+  )
+    .bind(target)
+    .first();
 
   if (!challenge) {
     return new Response(`${targetDisplay}, you have no pending challenge.`);
   }
 
-  await env.DB.prepare(
-    `UPDATE duels
-     SET status = 'declined'
-     WHERE id = ?`
-  ).bind(challenge.id).run();
+  const challengerPlayer = await env.DB.prepare(
+    `SELECT display_name
+     FROM players
+     WHERE username = ?`
+  )
+    .bind(challenge.challenger)
+    .first();
 
-  await env.DB.prepare(
-    `INSERT INTO events (event_type, message)
-     VALUES (?, ?)`
-  ).bind(
-    "challenge_declined",
-    `${targetDisplay} declined a challenge from ${challenge.challenger}.`
-  ).run();
+  const challengerDisplay =
+    challengerPlayer?.display_name || challenge.challenger;
+
+  await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE duels
+       SET status = 'declined',
+           result = 'declined'
+       WHERE id = ?`
+    ).bind(challenge.id),
+
+    env.DB.prepare(
+      `INSERT INTO events (event_type, message)
+       VALUES (?, ?)`
+    ).bind(
+      "challenge_declined",
+      `${targetDisplay} declined a challenge from ${challengerDisplay}.`
+    ),
+  ]);
 
   return new Response(
-    `${targetDisplay} declined the challenge. The goblin crowd boos respectfully.`
+    `🏃 ${targetDisplay} fled from ${challengerDisplay}'s challenge. The goblin crowd boos, but secretly understands.`
   );
 }
