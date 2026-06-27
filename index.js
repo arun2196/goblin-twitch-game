@@ -11,6 +11,8 @@ import { handleRichlist } from "./commands/richlist.js";
 import { handleAskGobbo } from "./commands/askGobbo.js";
 import { handleSound } from "./commands/sound.js";
 import { handleEventSub } from "./commands/twitch.js";
+import { handleQueue } from "./commands/queue.js";
+import { handleDungeon } from "./commands/dungeon.js";
 
 import { generateGobboSpeech } from "./helpers/gobboVoice.js";
 import { uploadAudioToR2 } from "./helpers/r2.js";
@@ -29,6 +31,8 @@ const routes = {
   "/richlist": handleRichlist,
   "/askgobbo": handleAskGobbo,
   "/ask": handleAskGobbo,
+  "/queue": handleQueue,
+  "/dungeon": handleDungeon,
 };
 
 export default {

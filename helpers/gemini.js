@@ -11,6 +11,9 @@ export async function callGemini(env, prompt) {
           temperature: 0.9,
           topP: 0.95,
           maxOutputTokens: 180,
+          thinkingConfig: {
+            thinkingBudget: 0
+          }
         },
         contents: [
           {
@@ -33,6 +36,12 @@ export async function callGemini(env, prompt) {
   }
 
   const data = await response.json();
+
+  console.log("========== GEMINI PROMPT ==========");
+  console.log(prompt);
+
+  console.log("========== GEMINI RAW RESPONSE ==========");
+  console.log(JSON.stringify(data, null, 2));
 
   const text =
     data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();

@@ -2,7 +2,7 @@ import { cleanUsername, cleanDisplayName } from "../helpers/players.js";
 import { randomInt, getRandomInventoryItem } from "../helpers/random.js";
 import { expireOldChallenges } from "../helpers/challenges.js";
 import { getAdvantage } from "../helpers/duels.js";
-import { generateDuelCommentary } from "../helpers/duelCommentary.js";
+import { generateCommentary } from "../helpers/commentary.js";
 
 function getRarityPower(rarity) {
   const powers = {
@@ -243,7 +243,7 @@ export async function handleAccept(env, url) {
   let commentary = fallback;
 
   try {
-    commentary = await generateDuelCommentary(env, {
+    commentary = await generateCommentary(env, "duel", {
       challenger: {
         username: challengerPlayer.username,
         displayName: challengerPlayer.display_name,
