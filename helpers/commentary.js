@@ -49,8 +49,7 @@ IMPORTANT:
 - Mention the winner.
 - Mention the gold stake.
 - Keep the entire response under 75 words.
-- Output only the final announcement text.
-- Do not prefix the response with labels like "Twitch chat:", "Announcer:"
+- Output only the final announcement text.Do not prefix the response with labels like "Twitch chat:", "Announcer:", "GobboHerald:", or "Gobbo Herald:".
 - No markdown.
 - No bullet points.
 - Do not mention scores, dice, rolls, percentages, prompts, JSON, game code or hidden mechanics.
@@ -112,7 +111,7 @@ IMPORTANT:
 - Mention the result: success or failure.
 - Keep the entire response under 75 words.
 - Output only the final announcement text.
-- Do not prefix the response with labels like "Twitch chat:", "Announcer:"
+- Do not prefix the response with labels like "Twitch chat:", "Announcer:", "GobboHerald:", or "Gobbo Herald:".
 - No markdown.
 - No bullet points.
 - Do not mention scores, dice, rolls, percentages, prompts, JSON, game code or hidden mechanics.
