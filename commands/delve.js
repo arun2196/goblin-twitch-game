@@ -1,6 +1,12 @@
-import { cleanUsername, cleanDisplayName, getOrCreatePlayer } from "../helpers/players.js";
+import {
+  cleanUsername,
+  cleanDisplayName,
+  getOrCreatePlayer,
+} from "../helpers/players.js";
+
 import { weightedPick, randomInt } from "../helpers/random.js";
 import { pickCommentary } from "../helpers/commentary.js";
+import { applyStoryNames } from "../helpers/aliases.js";
 
 export async function handleDelve(env, url) {
   const username = cleanUsername(url.searchParams.get("user"));
@@ -9,6 +15,20 @@ export async function handleDelve(env, url) {
   if (!username) return new Response("Usage: !delve");
 
   const player = await getOrCreatePlayer(env, username, displayName);
+  const playerDisplayName = player.display_name || displayName || username;
+
+  const [storyPlayer] = await applyStoryNames(env, [
+    {
+      ...player,
+      username,
+      displayName: playerDisplayName,
+    },
+  ]);
+
+  const storyName =
+    storyPlayer?.storyName ||
+    storyPlayer?.displayName ||
+    playerDisplayName;
 
   const delve = await env.DB.prepare(`
     SELECT *
@@ -45,9 +65,7 @@ export async function handleDelve(env, url) {
     difficulty.name
   );
 
-  const baseGold = didFail
-    ? -randomInt(5, 20)
-    : randomInt(10, 40);
+  const baseGold = didFail ? -randomInt(5, 20) : randomInt(10, 40);
 
   const rolledGoldChange = Math.floor(
     baseGold * Number(difficulty.gold_multiplier || 1)
@@ -55,9 +73,10 @@ export async function handleDelve(env, url) {
 
   const currentGold = Number(player.gold || 0);
 
-  const goldChange = rolledGoldChange < 0
-    ? -Math.min(currentGold, Math.abs(rolledGoldChange))
-    : rolledGoldChange;
+  const goldChange =
+    rolledGoldChange < 0
+      ? -Math.min(currentGold, Math.abs(rolledGoldChange))
+      : rolledGoldChange;
 
   const newGold = currentGold + goldChange;
 
@@ -69,35 +88,30 @@ export async function handleDelve(env, url) {
           delve_failures = delve_failures + ?,
           updated_at = CURRENT_TIMESTAMP
       WHERE username = ?
-    `).bind(
-      newGold,
-      didFail ? 0 : 1,
-      didFail ? 1 : 0,
-      username
-    ),
+    `).bind(newGold, didFail ? 0 : 1, didFail ? 1 : 0, username),
 
     env.DB.prepare(`
       INSERT INTO transactions (username, amount, reason)
       VALUES (?, ?, ?)
-    `).bind(
-      username,
-      goldChange,
-      didFail ? "delve_fail" : "delve_success"
-    )
+    `).bind(username, goldChange, didFail ? "delve_fail" : "delve_success"),
   ]);
 
   const vars = {
-    user: displayName,
+    user: storyName,
+    displayName: playerDisplayName,
+    alias: storyPlayer?.alias || "",
     delve: delve.name || "",
     zone: delve.zone || "",
     boss: delve.boss_name || "",
     difficulty: difficulty.name || "",
-    gold: Math.abs(goldChange)
+    gold: Math.abs(goldChange),
   };
 
   const render = (text) => {
     return (text || "")
       .replaceAll("{user}", vars.user)
+      .replaceAll("{displayName}", vars.displayName)
+      .replaceAll("{alias}", vars.alias)
       .replaceAll("{delve}", vars.delve)
       .replaceAll("{zone}", vars.zone)
       .replaceAll("{boss}", vars.boss)
@@ -105,17 +119,20 @@ export async function handleDelve(env, url) {
       .replaceAll("{gold}", String(vars.gold));
   };
 
-  const goldLine = goldChange >= 0
-    ? `+${goldChange} gold`
-    : `${goldChange} gold`;
+  const goldLine =
+    goldChange >= 0 ? `+${goldChange} gold` : `${goldChange} gold`;
 
   const introText = render(intro?.text || "{user} ventures into {delve}.");
-  const situationText = render(situation?.text || "Something suspicious happens.");
+  const situationText = render(
+    situation?.text || "Something suspicious happens."
+  );
   const twistText = render(twist?.text || "Nobody understands why.");
   const endingText = render(ending?.text || "{user} escapes somehow.");
 
   return new Response(
-    `🕳️ ${introText} Difficulty: ${vars.difficulty}. ${situationText} ${twistText} ${endingText} ${goldLine}`
-      .slice(0, 490)
+    `🕳️ ${introText} Difficulty: ${vars.difficulty}. ${situationText} ${twistText} ${endingText} ${goldLine}`.slice(
+      0,
+      490
+    )
   );
 }

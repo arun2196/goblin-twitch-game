@@ -6,6 +6,38 @@ import { sendTwitchChatMessage } from "../helpers/twitchChat.js";
 import { getRandomDungeonSpecialEvent } from "../helpers/dungeonSpecialEvents.js";
 import { applyStoryNames } from "../helpers/aliases.js";
 
+async function ensurePlayer(env, member) {
+  if (!member?.username) return;
+
+  await env.DB.prepare(`
+    INSERT OR IGNORE INTO players (
+      username,
+      display_name,
+      gold,
+      created_at,
+      updated_at
+    )
+    VALUES (?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+  `)
+    .bind(
+      member.username,
+      member.displayName || member.display_name || member.username
+    )
+    .run();
+
+  await env.DB.prepare(`
+    UPDATE players
+    SET display_name = ?,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE username = ?
+  `)
+    .bind(
+      member.displayName || member.display_name || member.username,
+      member.username
+    )
+    .run();
+}
+
 function getItemPower(item) {
   if (!item) return 1;
 
@@ -28,7 +60,7 @@ function getItemPower(item) {
 function makePersonalChampion(member) {
   return {
     id: null,
-    item_name: member.storyName || member.displayName,
+    item_name: member.storyName || member.displayName || member.username,
     item_type: "Mortal",
     rarity: "desperate",
     power: 1,
@@ -99,14 +131,26 @@ function calculateSuccessChance({ party, playerItems, encounter }) {
   return clamp(chance, 20, 95);
 }
 
-async function rewardPlayer(env, username, amount, reason) {
+async function rewardPlayer(env, username, displayName, amount, reason) {
   await env.DB.batch([
+    env.DB.prepare(`
+      INSERT OR IGNORE INTO players (
+        username,
+        display_name,
+        gold,
+        created_at,
+        updated_at
+      )
+      VALUES (?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `).bind(username, displayName || username),
+
     env.DB.prepare(`
       UPDATE players
       SET gold = gold + ?,
+          display_name = COALESCE(?, display_name),
           updated_at = CURRENT_TIMESTAMP
       WHERE username = ?
-    `).bind(amount, username),
+    `).bind(amount, displayName || username, username),
 
     env.DB.prepare(`
       INSERT INTO transactions (username, amount, reason)
@@ -121,6 +165,7 @@ export async function handleDungeon(env, url) {
   const party = await buildDungeonParty(env);
 
   if (!party || party.members.length === 0) {
+    console.log("[Dungeon Cron] No queued players.");
     return new Response("");
   }
 
@@ -131,6 +176,11 @@ export async function handleDungeon(env, url) {
   }
 
   let realPlayers = party.members.filter((m) => m.type === "player");
+
+  for (const member of realPlayers) {
+    await ensurePlayer(env, member);
+  }
+
   realPlayers = await applyStoryNames(env, realPlayers);
 
   const storyParty = {
@@ -138,9 +188,7 @@ export async function handleDungeon(env, url) {
     members: party.members.map((member) => {
       if (member.type !== "player") return member;
 
-      return (
-        realPlayers.find((p) => p.username === member.username) || member
-      );
+      return realPlayers.find((p) => p.username === member.username) || member;
     }),
   };
 
@@ -153,7 +201,7 @@ export async function handleDungeon(env, url) {
 
     playerItems.push({
       username: member.username,
-      displayName: member.displayName,
+      displayName: member.displayName || member.username,
       storyName: member.storyName,
       alias: member.alias,
       aliases: member.aliases,
@@ -166,7 +214,7 @@ export async function handleDungeon(env, url) {
   const brokenItems = [];
 
   const successChance = calculateSuccessChance({
-    party,
+    party: storyParty,
     playerItems,
     encounter,
   });
@@ -196,6 +244,7 @@ export async function handleDungeon(env, url) {
     await rewardPlayer(
       env,
       member.username,
+      member.displayName || member.username,
       amount,
       specialEvent
         ? success
@@ -208,7 +257,7 @@ export async function handleDungeon(env, url) {
 
     rewards.push({
       username: member.username,
-      displayName: member.displayName,
+      displayName: member.displayName || member.username,
       storyName: member.storyName,
       alias: member.alias,
       amount,
@@ -237,7 +286,7 @@ export async function handleDungeon(env, url) {
     party: storyParty,
     encounter,
     playerItems,
-    heroes: party.members.filter((m) => m.type === "hero"),
+    heroes: storyParty.members.filter((m) => m.type === "hero"),
     specialEvent,
     specialPrompt,
     result: {
@@ -249,7 +298,7 @@ export async function handleDungeon(env, url) {
   };
 
   const fallbackNames = storyParty.members
-    .map((m) => m.storyName || m.displayName || m.name)
+    .map((m) => m.storyName || m.displayName || m.name || m.username)
     .join(", ");
 
   const fallback = specialEvent
@@ -272,20 +321,15 @@ export async function handleDungeon(env, url) {
     console.log("Dungeon commentary failed:", error?.message || error);
   }
 
-  let rewardText = "";
-
-  if (rewards.length) {
-    rewardText =
-      " Rewards: " +
+  const rewardText = rewards.length
+    ? " Rewards: " +
       rewards.map((r) => `${r.displayName} +${r.amount}g`).join(", ") +
-      ".";
-  }
+      "."
+    : "";
 
-  let brokenText = "";
-
-  if (brokenItems.length) {
-    brokenText = ` Broken: ${brokenItems.join(", ")}.`;
-  }
+  const brokenText = brokenItems.length
+    ? ` Broken: ${brokenItems.join(", ")}.`
+    : "";
 
   const finalMessage = `${commentary}${rewardText}${brokenText}`.slice(0, 490);
 
