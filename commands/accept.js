@@ -3,6 +3,7 @@ import { randomInt, getRandomInventoryItem } from "../helpers/random.js";
 import { expireOldChallenges } from "../helpers/challenges.js";
 import { getAdvantage } from "../helpers/duels.js";
 import { generateCommentary } from "../helpers/commentary.js";
+import { applyStoryNames } from "../helpers/aliases.js";
 
 function getRarityPower(rarity) {
   const powers = {
@@ -21,7 +22,7 @@ function makePlayerFighter(player) {
   return {
     id: null,
     item_key: "player_self",
-    item_name: player.display_name,
+    item_name: player.storyName || player.display_name,
     item_type: "Mortal",
     rarity: "desperate",
     uses_left: null,
@@ -37,11 +38,13 @@ function getFighterPower(fighter) {
 }
 
 function getFighterLabel(player, fighter) {
+  const name = player.storyName || player.display_name;
+
   if (fighter?.is_player) {
-    return `${player.display_name} personally`;
+    return `${name} personally`;
   }
 
-  return `${player.display_name}'s ${fighter.item_name}`;
+  return `${name}'s ${fighter.item_name}`;
 }
 
 async function damageFighter(env, fighter, brokenItems) {
@@ -95,13 +98,13 @@ export async function handleAccept(env, url) {
   const challenger = challenge.challenger;
   const stake = Number(challenge.stake);
 
-  const challengerPlayer = await env.DB.prepare(
+  let challengerPlayer = await env.DB.prepare(
     `SELECT * FROM players WHERE username = ?`
   )
     .bind(challenger)
     .first();
 
-  const targetPlayer = await env.DB.prepare(
+  let targetPlayer = await env.DB.prepare(
     `SELECT * FROM players WHERE username = ?`
   )
     .bind(target)
@@ -110,6 +113,27 @@ export async function handleAccept(env, url) {
   if (!challengerPlayer || !targetPlayer) {
     return new Response("One of the goblins vanished from the hoard.");
   }
+
+  const storyPlayers = await applyStoryNames(env, [
+    {
+      ...challengerPlayer,
+      displayName: challengerPlayer.display_name,
+    },
+    {
+      ...targetPlayer,
+      displayName: targetPlayer.display_name,
+    },
+  ]);
+
+  challengerPlayer = {
+    ...challengerPlayer,
+    ...storyPlayers.find((p) => p.username === challengerPlayer.username),
+  };
+
+  targetPlayer = {
+    ...targetPlayer,
+    ...storyPlayers.find((p) => p.username === targetPlayer.username),
+  };
 
   if (challengerPlayer.gold < stake || targetPlayer.gold < stake) {
     await env.DB.prepare(`UPDATE duels SET status = 'cancelled' WHERE id = ?`)
@@ -238,7 +262,7 @@ export async function handleAccept(env, url) {
       challengerPlayer,
       challengerItem
     )} faced ${getFighterLabel(targetPlayer, targetItem)}. ` +
-    `${winner.display_name} wins ${stake}g!`;
+    `${winner.storyName || winner.display_name} wins ${stake}g!`;
 
   let commentary = fallback;
 
@@ -247,11 +271,17 @@ export async function handleAccept(env, url) {
       challenger: {
         username: challengerPlayer.username,
         displayName: challengerPlayer.display_name,
+        storyName: challengerPlayer.storyName,
+        alias: challengerPlayer.alias,
+        aliases: challengerPlayer.aliases,
         goldBefore: challengerPlayer.gold,
       },
       target: {
         username: targetPlayer.username,
         displayName: targetPlayer.display_name,
+        storyName: targetPlayer.storyName,
+        alias: targetPlayer.alias,
+        aliases: targetPlayer.aliases,
         goldBefore: targetPlayer.gold,
       },
       challengerFighter: {
@@ -269,8 +299,10 @@ export async function handleAccept(env, url) {
         score: targetScore,
       },
       result: {
-        winner: winner.display_name,
-        loser: loser.display_name,
+        winner: winner.storyName || winner.display_name,
+        winnerDisplayName: winner.display_name,
+        loser: loser.storyName || loser.display_name,
+        loserDisplayName: loser.display_name,
         stake,
         tieBreakerUsed,
         brokenItems,
