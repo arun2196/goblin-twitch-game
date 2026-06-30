@@ -15,22 +15,16 @@ export async function handleAlias(env, url) {
 
   const cleanTarget = rawTarget.replace(/^@/, "").trim();
   const username = cleanTarget.toLowerCase();
-
   const alias = rawAlias.slice(0, 32);
 
   await env.DB.prepare(`
     INSERT INTO player_aliases (username, display_name, alias, updated_by)
     VALUES (?, ?, ?, ?)
-    ON CONFLICT(username) DO UPDATE SET
-      display_name = excluded.display_name,
-      alias = excluded.alias,
-      updated_by = excluded.updated_by,
-      updated_at = CURRENT_TIMESTAMP
   `)
     .bind(username, cleanTarget, alias, rawUpdatedBy)
     .run();
 
-  return new Response(`@${cleanTarget} is now known as "${alias}"!`);
+  return new Response(`@${cleanTarget} gained nickname "${alias}"!`);
 }
 
 async function claimAliasCooldown(env) {
