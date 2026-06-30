@@ -4,6 +4,7 @@ import { getRandomInventoryItem, randomInt } from "../helpers/random.js";
 import { generateCommentary } from "../helpers/commentary.js";
 import { sendTwitchChatMessage } from "../helpers/twitchChat.js";
 import { getRandomDungeonSpecialEvent } from "../helpers/dungeonSpecialEvents.js";
+import { applyStoryNames } from "../helpers/aliases.js";
 
 function getItemPower(item) {
   if (!item) return 1;
@@ -27,7 +28,7 @@ function getItemPower(item) {
 function makePersonalChampion(member) {
   return {
     id: null,
-    item_name: member.displayName,
+    item_name: member.storyName || member.displayName,
     item_type: "Mortal",
     rarity: "desperate",
     power: 1,
@@ -129,7 +130,20 @@ export async function handleDungeon(env, url) {
     return new Response("No dungeon encounter found.");
   }
 
-  const realPlayers = party.members.filter((m) => m.type === "player");
+  let realPlayers = party.members.filter((m) => m.type === "player");
+  realPlayers = await applyStoryNames(env, realPlayers);
+
+  const storyParty = {
+    ...party,
+    members: party.members.map((member) => {
+      if (member.type !== "player") return member;
+
+      return (
+        realPlayers.find((p) => p.username === member.username) || member
+      );
+    }),
+  };
+
   const playerItems = [];
 
   for (const member of realPlayers) {
@@ -140,6 +154,9 @@ export async function handleDungeon(env, url) {
     playerItems.push({
       username: member.username,
       displayName: member.displayName,
+      storyName: member.storyName,
+      alias: member.alias,
+      aliases: member.aliases,
       role: member.role,
       item,
       itemPower: getItemPower(item),
@@ -192,6 +209,8 @@ export async function handleDungeon(env, url) {
     rewards.push({
       username: member.username,
       displayName: member.displayName,
+      storyName: member.storyName,
+      alias: member.alias,
       amount,
       bonusAmount,
     });
@@ -215,7 +234,7 @@ export async function handleDungeon(env, url) {
     : null;
 
   const data = {
-    party,
+    party: storyParty,
     encounter,
     playerItems,
     heroes: party.members.filter((m) => m.type === "hero"),
@@ -229,8 +248,8 @@ export async function handleDungeon(env, url) {
     },
   };
 
-  const fallbackNames = party.members
-    .map((m) => m.displayName || m.name)
+  const fallbackNames = storyParty.members
+    .map((m) => m.storyName || m.displayName || m.name)
     .join(", ");
 
   const fallback = specialEvent
