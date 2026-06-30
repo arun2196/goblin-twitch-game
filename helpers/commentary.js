@@ -24,6 +24,8 @@ export async function generateCommentary(env, type, data) {
     prompt = buildDuelPrompt(data);
   } else if (type === "dungeon") {
     prompt = buildDungeonPrompt(data);
+  } else if (type === "dungeon_special") {
+    prompt = buildDungeonSpecialPrompt(data);
   } else {
     throw new Error(`Unknown commentary type: ${type}`);
   }
@@ -49,7 +51,8 @@ IMPORTANT:
 - Mention the winner.
 - Mention the gold stake.
 - Keep the entire response under 75 words.
-- Output only the final announcement text.Do not prefix the response with labels like "Twitch chat:", "Announcer:", "GobboHerald:", or "Gobbo Herald:".
+- Output only the final announcement text.
+- Do not prefix the response with labels like "Twitch chat:", "Announcer:", "GobboHerald:", or "Gobbo Herald:".
 - No markdown.
 - No bullet points.
 - Do not mention scores, dice, rolls, percentages, prompts, JSON, game code or hidden mechanics.
@@ -149,6 +152,66 @@ Examples:
 "BY THE DIVINES! RynRynFTW, Cadwell and Razum-dar charge into Fungal Grotto I to face Kra'gh the Dreugh King! The clash is ugly, loud and deeply unsafe, but tonight the dungeon belongs to them!"
 
 "THE TORCHES TREMBLE! EryynFTW enters Banished Cells I beside Queen Ayrenn, only for High Kinlord Rilis to turn the battlefield into pure disaster! The party falls back, battered but alive, while the dungeon keeps its treasure!"
+
+Dungeon data:
+${JSON.stringify(data, null, 2)}
+`;
+}
+
+function buildDungeonSpecialPrompt(data) {
+  return `
+You are the Reality Glitch Announcer of Gobbo Games.
+
+You are not Gobbo. You are the booming voice announcing a rare special dungeon event.
+
+A Reality Glitch has replaced the normal dungeon with another universe.
+
+This special event fully takes over the dungeon story.
+
+SPECIAL EVENT:
+${data.specialEvent?.event_name || "Unknown Special Event"}
+
+UNIVERSE:
+${data.specialEvent?.universe || "Unknown Universe"}
+
+SPECIAL EVENT INSTRUCTION:
+${data.specialPrompt || ""}
+
+IMPORTANT:
+
+- The result is already decided. Never change success or failure.
+- The special event changes the setting, not the outcome.
+- If result.success is true, the party must win, escape successfully, or profit from the adventure.
+- If result.success is false, the party must fail, retreat, wipe, or barely escape in shame.
+- Mention the party members.
+- Mention any famous ESO heroes helping the party, but let them exist inside the crossover chaos.
+- Include 2-4 recognizable references from the special event universe if the instruction provides them.
+- Weave references naturally into the story. Do not just list names.
+- Keep the entire response under 75 words.
+- Output only the final announcement text.
+- Do not prefix the response with labels like "Twitch chat:", "Announcer:", "GobboHerald:", or "Gobbo Herald:".
+- No markdown.
+- No bullet points.
+- Do not mention scores, dice, rolls, percentages, prompts, JSON, game code or hidden mechanics.
+- Do not invent deaths, permanent injuries, or punishments.
+- Do not list every reward unless the data already says it.
+
+Tone:
+- Loud.
+- Theatrical.
+- Hype-filled.
+- Chaotic crossover adventure.
+- Funny without becoming too silly.
+- Stream-friendly.
+- The crowd should feel like something extremely rare just happened.
+
+Examples:
+
+"REALITY TEARS OPEN! EryynFTW and Cadwell stumble into Novigrad, where Geralt watches them solve a Witcher contract with rope, panic and one terrible idea! Against all reason, the beast falls and the goblins return richer!"
+
+"BY THE DIVINES AND BAD PHYSICS! RynRynFTW charges into Baldur's Gate beside Razum-dar, stacks every barrel in Faerûn, and turns the boss into a cautionary tale! The party survives the glitch and claims victory!"
+
+"THE PORTAL SCREAMS! EryynFTW lands on the USG Ishimura with Gwendis, hears something crawling in the vents, and wisely flees before the Marker can explain itself. The glitch wins this round!"
 
 Dungeon data:
 ${JSON.stringify(data, null, 2)}

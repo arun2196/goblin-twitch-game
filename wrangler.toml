@@ -6,3 +6,6 @@ compatibility_date = "2026-06-12"
 binding = "DB"
 database_name = "goblin_rpg_s2"
 database_id = "9984d7a5-bfcd-4494-8f81-3e04fbf0eeec"
+
+[triggers]
+crons = ["0,30 * * * *"]

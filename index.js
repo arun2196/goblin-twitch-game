@@ -36,6 +36,10 @@ const routes = {
 };
 
 export default {
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(runDungeonCron(env));
+  },
+
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
@@ -54,11 +58,7 @@ export default {
         const key = await uploadAudioToR2(env, audioBuffer, "gobbo-voice");
         const audioUrl = `${url.origin}/sound?key=${encodeURIComponent(key)}`;
 
-        return Response.json({
-          ok: true,
-          key,
-          audioUrl,
-        });
+        return Response.json({ ok: true, key, audioUrl });
       }
 
       if (url.pathname === "/gobbo-player") {
@@ -80,6 +80,7 @@ export default {
             throttled: true,
           });
         }
+
         const sound = await getNextGobboSound(env);
 
         if (!sound) {
@@ -233,4 +234,30 @@ async function claimGobboPollSlot(env) {
     .first();
 
   return !!inserted;
+}
+
+async function runDungeonCron(env) {
+  for (let i = 0; i < 5; i++) {
+    try {
+      const res = await handleDungeon(
+        env,
+        new URL("https://cron.local/dungeon")
+      );
+
+      const text = await res.text();
+
+      if (!text) {
+        console.log("[Dungeon Cron] No more queued players.");
+        break;
+      }
+
+      console.log(`[Dungeon Cron] Dungeon group ${i + 1} completed:`, text);
+
+      // Small delay between separate dungeon chat messages.
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    } catch (err) {
+      console.log("Dungeon cron failed:", err?.message || err);
+      break;
+    }
+  }
 }

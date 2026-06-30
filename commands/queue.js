@@ -1,12 +1,3 @@
-const VALID_ROLES = ["tank", "healer", "dd", "flex"];
-
-const ROLE_LABELS = {
-  tank: "Tank",
-  healer: "Healer",
-  dd: "Damage Dealer",
-  flex: "Flex",
-};
-
 export async function handleQueue(env, url) {
   const rawUsername = url.searchParams.get("username")?.trim();
 
@@ -21,11 +12,10 @@ export async function handleQueue(env, url) {
     url.searchParams.get("display_name")?.trim() ||
     rawUsername;
 
-  const rawRole = url.searchParams.get("role")?.trim().toLowerCase() || "flex";
-  const role = VALID_ROLES.includes(rawRole) ? rawRole : "flex";
+  const role = "flex";
 
   const existing = await env.DB.prepare(`
-    SELECT role
+    SELECT 1
     FROM dungeon_queue
     WHERE username = ?
   `)
@@ -37,21 +27,18 @@ export async function handleQueue(env, url) {
     VALUES (?, ?, ?)
     ON CONFLICT(username) DO UPDATE SET
       display_name = excluded.display_name,
-      role = excluded.role,
       queued_at = CURRENT_TIMESTAMP
   `)
     .bind(username, displayName, role)
     .run();
 
-  const roleLabel = ROLE_LABELS[role];
-
   if (existing) {
     return new Response(
-      `@${displayName} updated their dungeon role to ${roleLabel}!`
+      `@${displayName} is already in the dungeon queue!`
     );
   }
 
   return new Response(
-    `@${displayName} joined the dungeon queue as ${roleLabel}!`
+    `@${displayName} joined the dungeon queue!`
   );
 }

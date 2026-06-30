@@ -2,6 +2,8 @@ import { buildDungeonParty } from "../helpers/dungeonPartyBuilder.js";
 import { getRandomDungeonEncounter } from "../helpers/dungeonData.js";
 import { getRandomInventoryItem, randomInt } from "../helpers/random.js";
 import { generateCommentary } from "../helpers/commentary.js";
+import { sendTwitchChatMessage } from "../helpers/twitchChat.js";
+import { getRandomDungeonSpecialEvent } from "../helpers/dungeonSpecialEvents.js";
 
 function getItemPower(item) {
   if (!item) return 1;
@@ -91,8 +93,6 @@ function calculateSuccessChance({ party, playerItems, encounter }) {
   );
 
   chance += totalItemPower;
-
-  // Higher minimum-level dungeons are a little nastier.
   chance -= Math.floor(Number(encounter.minimum_level || 10) / 10);
 
   return clamp(chance, 20, 95);
@@ -115,6 +115,8 @@ async function rewardPlayer(env, username, amount, reason) {
 }
 
 export async function handleDungeon(env, url) {
+  console.log("[Dungeon Cron] Starting scheduled dungeon.");
+
   const party = await buildDungeonParty(env);
 
   if (!party || party.members.length === 0) {
@@ -128,7 +130,6 @@ export async function handleDungeon(env, url) {
   }
 
   const realPlayers = party.members.filter((m) => m.type === "player");
-
   const playerItems = [];
 
   for (const member of realPlayers) {
@@ -154,6 +155,7 @@ export async function handleDungeon(env, url) {
   });
 
   const success = Math.random() * 100 < successChance;
+  const specialEvent = await getRandomDungeonSpecialEvent(env);
 
   for (const row of playerItems) {
     await damageItem(env, row.item, brokenItems);
@@ -162,23 +164,39 @@ export async function handleDungeon(env, url) {
   const rewards = [];
 
   for (const member of realPlayers) {
-    const amount = success ? randomInt(80, 160) : randomInt(10, 40);
+    let amount = success ? randomInt(80, 160) : randomInt(10, 40);
+    let bonusAmount = 0;
+
+    if (specialEvent) {
+      bonusAmount = randomInt(
+        Number(specialEvent.bonus_gold_min || 0),
+        Number(specialEvent.bonus_gold_max || 0)
+      );
+
+      amount += bonusAmount;
+    }
 
     await rewardPlayer(
       env,
       member.username,
       amount,
-      success ? "dungeon_success" : "dungeon_failure"
+      specialEvent
+        ? success
+          ? "dungeon_special_success"
+          : "dungeon_special_failure"
+        : success
+          ? "dungeon_success"
+          : "dungeon_failure"
     );
 
     rewards.push({
       username: member.username,
       displayName: member.displayName,
       amount,
+      bonusAmount,
     });
   }
 
-  // Remove used players from queue so they do not repeat forever.
   if (party.playerQueueIds?.length) {
     const placeholders = party.playerQueueIds.map(() => "?").join(",");
 
@@ -190,11 +208,19 @@ export async function handleDungeon(env, url) {
       .run();
   }
 
+  const specialPrompt = specialEvent
+    ? success
+      ? specialEvent.success_prompt
+      : specialEvent.failure_prompt
+    : null;
+
   const data = {
     party,
     encounter,
     playerItems,
     heroes: party.members.filter((m) => m.type === "hero"),
+    specialEvent,
+    specialPrompt,
     result: {
       success,
       successChance,
@@ -207,14 +233,22 @@ export async function handleDungeon(env, url) {
     .map((m) => m.displayName || m.name)
     .join(", ");
 
-  const fallback = success
-    ? `🏰 ${fallbackNames} conquered ${encounter.dungeon_name} and defeated ${encounter.boss_name}!`
-    : `💀 ${fallbackNames} entered ${encounter.dungeon_name}, but ${encounter.boss_name} sent them crawling back.`;
+  const fallback = specialEvent
+    ? success
+      ? `🌌 ${fallbackNames} survived a Reality Glitch: ${specialEvent.event_name}!`
+      : `🌌 ${fallbackNames} were humbled by a Reality Glitch: ${specialEvent.event_name}!`
+    : success
+      ? `🏰 ${fallbackNames} conquered ${encounter.dungeon_name} and defeated ${encounter.boss_name}!`
+      : `💀 ${fallbackNames} entered ${encounter.dungeon_name}, but ${encounter.boss_name} sent them crawling back.`;
 
   let commentary = fallback;
 
   try {
-    commentary = await generateCommentary(env, "dungeon", data);
+    commentary = await generateCommentary(
+      env,
+      specialEvent ? "dungeon_special" : "dungeon",
+      data
+    );
   } catch (error) {
     console.log("Dungeon commentary failed:", error?.message || error);
   }
@@ -234,5 +268,13 @@ export async function handleDungeon(env, url) {
     brokenText = ` Broken: ${brokenItems.join(", ")}.`;
   }
 
-  return new Response(`${commentary}${rewardText}${brokenText}`.slice(0, 490));
+  const finalMessage = `${commentary}${rewardText}${brokenText}`.slice(0, 490);
+
+  try {
+    await sendTwitchChatMessage(env, finalMessage);
+  } catch (error) {
+    console.log("Dungeon chat post failed:", error?.message || error);
+  }
+
+  return new Response(finalMessage);
 }
