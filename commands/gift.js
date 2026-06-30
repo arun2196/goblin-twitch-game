@@ -26,7 +26,20 @@ export async function handleGift(env, url) {
   }
 
   const giver = await getOrCreatePlayer(env, sender, senderDisplay);
-  const receiver = await getOrCreatePlayer(env, target, targetDisplay);
+
+  const receiver = await env.DB.prepare(`
+    SELECT *
+    FROM players
+    WHERE username = ?
+  `)
+    .bind(target)
+    .first();
+
+  if (!receiver) {
+    return new Response(
+      `${targetDisplay} has not registered in Gobbo Games yet. They need to use a command like !chest, !delve, or !queue before they can receive gifts.`
+    );
+  }
 
   if (giver.gold < amount) {
     return new Response(

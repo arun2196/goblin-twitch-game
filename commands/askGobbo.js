@@ -9,7 +9,7 @@ import { queueGobboSound } from "../helpers/gobboSoundQueue.js";
 import { buildGobboPrompt } from "../helpers/gobboPrompt.js";
 import { sendTwitchChatMessage } from "../helpers/twitchChat.js";
 
-const ASK_GOBBO_COST = 0;
+const ASK_GOBBO_COST = 75;
 const MAX_QUESTION_LENGTH = 220;
 const NARRATOR_VOICE_ID = "B4WD87mB08osg18bpXRF";
 
