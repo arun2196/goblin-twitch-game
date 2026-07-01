@@ -13,6 +13,8 @@ const ASK_GOBBO_COST = 75;
 const MAX_QUESTION_LENGTH = 220;
 const NARRATOR_VOICE_ID = "B4WD87mB08osg18bpXRF";
 
+const TWITCH_SAFE_LIMIT = 480;
+
 export async function handleAskGobbo(env, url, request, ctx) {
   const username = cleanUsername(url.searchParams.get("user"));
   const displayName = cleanDisplayName(url.searchParams.get("user"));
@@ -59,7 +61,7 @@ export async function runAskGobboVoice(
   });
 }
 
-async function runAskGobbo({
+export async function runAskGobbo({
   env,
   username,
   displayName,
@@ -113,22 +115,11 @@ async function runAskGobbo({
 
   const answer = await askGemini(env, prompt);
 
-  if (eventType === "ask_gobbo_voice") {
-    console.log("Trying to send Gobbo answer to chat");
-
-    ctx?.waitUntil(
-      sendTwitchChatMessage(
-        env,
-        `👺 Gobbo answers ${player.display_name}: ${answer}`.slice(0, 500)
-      )
-        .then((sent) => {
-          console.log("Twitch chat send result:", sent);
-        })
-        .catch((err) => {
-          console.error("Twitch chat send crashed:", err.message);
-        })
-    );
-  }
+  ctx?.waitUntil(
+    sendGobboAnswerInChunks(env, player.display_name, answer).catch((err) => {
+      console.error("GobboHerald chat send crashed:", err.message);
+    })
+  );
 
   const batch = [];
 
@@ -158,7 +149,7 @@ async function runAskGobbo({
       player.display_name,
       cleanQuestion,
       answer,
-      chargeGold ? ASK_GOBBO_COST : 75
+      chargeGold ? ASK_GOBBO_COST : 0
     ),
 
     env.DB.prepare(`
@@ -205,8 +196,51 @@ async function runAskGobbo({
   return {
     ok: true,
     answer,
-    message: `Gobbo says: ${answer}`.slice(0, 490),
+    message: `👺 GobboHerald is answering ${player.display_name}...`,
   };
+}
+
+async function sendGobboAnswerInChunks(env, displayName, answer) {
+  const messages = splitForTwitch(answer, [
+    `👺 Gobbo answers ${displayName}: `,
+    `👺 Gobbo continues: `,
+  ]);
+
+  for (const message of messages) {
+    await sendTwitchChatMessage(env, message);
+  }
+}
+
+function splitForTwitch(text, prefixes) {
+  const cleaned = String(text || "").replace(/\s+/g, " ").trim();
+  const messages = [];
+
+  let remaining = cleaned;
+  let index = 0;
+
+  while (remaining && messages.length < 3) {
+    const prefix = prefixes[index] || prefixes[prefixes.length - 1];
+    const limit = TWITCH_SAFE_LIMIT - prefix.length;
+
+    if (remaining.length <= limit) {
+      messages.push(prefix + remaining);
+      break;
+    }
+
+    let cutAt = remaining.lastIndexOf(" ", limit - 3);
+
+    if (cutAt < 80) {
+      cutAt = limit - 3;
+    }
+
+    const chunk = remaining.slice(0, cutAt).trimEnd();
+    messages.push(prefix + chunk + "...");
+
+    remaining = remaining.slice(cutAt).trimStart();
+    index++;
+  }
+
+  return messages;
 }
 
 function looksLikePromptInjection(text) {
@@ -318,5 +352,5 @@ function cleanGobboAnswer(text) {
     .replace(/<[^>]*>/g, "")
     .replace(/^["']|["']$/g, "")
     .replace(/\s+/g, " ")
-    .slice(0, 280);
+    .slice(0, 700);
 }

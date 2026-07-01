@@ -1,4 +1,4 @@
-import { runAskGobboVoice } from "./askGobbo.js";
+import { runAskGobbo, runAskGobboVoice } from "./askGobbo.js";
 
 const ASK_GOBBO_POWER_UP_ID = "fdc9d3c6-1b87-4825-ac9c-5cebbb95e3df";
 
@@ -7,13 +7,6 @@ export async function handleEventSub(request, env, ctx) {
   const messageId = request.headers.get("Twitch-Eventsub-Message-Id");
 
   const bodyText = await request.text();
-
-  // const validSignature = await verifyTwitchSignature(request, bodyText, env); Will I need to verify the signature? I don't think so, since this is a public endpoint and Twitch will only send valid requests. But maybe it's a good idea to verify it anyway, just in case.
-
-  // if (!validSignature) {
-  //   console.log("Invalid Twitch EventSub signature");
-  //   return new Response("Forbidden", { status: 403 });
-  // }
 
   let body;
   try {
@@ -26,9 +19,7 @@ export async function handleEventSub(request, env, ctx) {
   if (messageType === "webhook_callback_verification") {
     return new Response(body.challenge, {
       status: 200,
-      headers: {
-        "Content-Type": "text/plain",
-      },
+      headers: { "Content-Type": "text/plain" },
     });
   }
 
@@ -36,16 +27,73 @@ export async function handleEventSub(request, env, ctx) {
     return new Response("OK", { status: 200 });
   }
 
+  const subscriptionType = body.subscription?.type;
   const event = body.event;
 
-  if (event.custom_power_up?.id !== ASK_GOBBO_POWER_UP_ID) {
+  console.log("EventSub type:", subscriptionType);
+  console.log("EventSub messageId:", messageId);
+
+  if (subscriptionType === "channel.chat.message") {
+    return await handleChatMessage(event, request, env, ctx, messageId);
+  }
+
+  if (event.custom_power_up?.id === ASK_GOBBO_POWER_UP_ID) {
+    return await handleAskGobboPowerUp(event, request, env, ctx, messageId);
+  }
+
+  return new Response("OK", { status: 200 });
+}
+
+async function handleChatMessage(event, request, env, ctx, messageId) {
+  const text = event.message?.text || "";
+  const chatterLogin = event.chatter_user_login || "";
+  const chatterName = event.chatter_user_name || chatterLogin;
+
+  console.log("Chat message:", chatterLogin, text);
+
+  if (!text.toLowerCase().startsWith("!askgobbo")) {
+    return new Response("OK", { status: 200 });
+  }
+
+  if (chatterLogin.toLowerCase() === "gobboherald") {
     return new Response("OK", { status: 200 });
   }
 
   const claimed = await claimEventSubMessage(env, messageId);
 
   if (!claimed) {
-    console.log("Duplicate EventSub ignored:", messageId);
+    console.log("Duplicate chat EventSub ignored:", messageId);
+    return new Response("OK", { status: 200 });
+  }
+
+  const question = text.replace(/^!askgobbo\s*/i, "").trim();
+
+  console.log("AskGobbo chat command detected:", chatterLogin, question);
+
+  ctx.waitUntil(
+    runAskGobbo({
+      env,
+      username: chatterLogin,
+      displayName: chatterName,
+      question,
+      chargeGold: true,
+      makeVoice: false,
+      origin: new URL(request.url).origin,
+      ctx,
+      eventType: "ask_gobbo",
+    }).catch((err) => {
+      console.error("AskGobbo chat failed:", err.message);
+    })
+  );
+
+  return new Response("OK", { status: 200 });
+}
+
+async function handleAskGobboPowerUp(event, request, env, ctx, messageId) {
+  const claimed = await claimEventSubMessage(env, messageId);
+
+  if (!claimed) {
+    console.log("Duplicate power-up EventSub ignored:", messageId);
     return new Response("OK", { status: 200 });
   }
 
@@ -66,7 +114,10 @@ export async function handleEventSub(request, env, ctx) {
 }
 
 async function claimEventSubMessage(env, messageId) {
-  if (!messageId) return false;
+  if (!messageId) {
+    console.log("No EventSub messageId");
+    return false;
+  }
 
   try {
     await env.DB.prepare(
@@ -76,66 +127,10 @@ async function claimEventSubMessage(env, messageId) {
       .bind(messageId, Date.now())
       .run();
 
+    console.log("EventSub claimed:", messageId);
     return true;
   } catch (err) {
+    console.error("EventSub claim failed:", err.message);
     return false;
   }
-}
-
-async function verifyTwitchSignature(request, bodyText, env) {
-  const messageId = request.headers.get("Twitch-Eventsub-Message-Id");
-  const timestamp = request.headers.get("Twitch-Eventsub-Message-Timestamp");
-  const signature = request.headers.get("Twitch-Eventsub-Message-Signature");
-
-  if (!messageId || !timestamp || !signature) {
-    return false;
-  }
-
-  if (!env.TWITCH_EVENTSUB_SECRET) {
-    console.error("Missing TWITCH_EVENTSUB_SECRET");
-    return false;
-  }
-
-  const encoder = new TextEncoder();
-
-  const key = await crypto.subtle.importKey(
-    "raw",
-    encoder.encode(env.TWITCH_EVENTSUB_SECRET),
-    {
-      name: "HMAC",
-      hash: "SHA-256",
-    },
-    false,
-    ["sign"]
-  );
-
-  const message = messageId + timestamp + bodyText;
-
-  const digest = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    encoder.encode(message)
-  );
-
-  const expectedSignature =
-    "sha256=" +
-    [...new Uint8Array(digest)]
-      .map((byte) => byte.toString(16).padStart(2, "0"))
-      .join("");
-
-  return timingSafeEqual(expectedSignature, signature);
-}
-
-function timingSafeEqual(a, b) {
-  if (a.length !== b.length) {
-    return false;
-  }
-
-  let result = 0;
-
-  for (let i = 0; i < a.length; i++) {
-    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-
-  return result === 0;
 }
