@@ -19,14 +19,22 @@ export function cleanDisplayName(name) {
 }
 
 export function getTitle(gold) {
-  if (gold >= 10000) return "Goblin Prince";
+  if (gold >= 100000) return "Goblin Emperor";
+  if (gold >= 75000) return "High King of the Hoard";
+  if (gold >= 50000) return "Goblin King";
+  if (gold >= 35000) return "Crownhoard Lord";
+  if (gold >= 25000) return "Treasure Duke";
+  if (gold >= 15000) return "Vault Baron";
+  if (gold >= 10000) return "Goldfang Prince";
+  if (gold >= 7500) return "Coin Count";
   if (gold >= 5000) return "Rat Duke";
   if (gold >= 3500) return "Spoon Viscount";
-  if (gold >= 2000) return "Cheese Count";
-  if (gold >= 1000) return "Barrel Baron";
-  if (gold >= 500) return "Loot Goblin";
-  if (gold >= 250) return "Shiny Collector";
-  if (gold >= 100) return "Coin Poucher";
+  if (gold >= 2500) return "Barrel Baron";
+  if (gold >= 1500) return "Loot Captain";
+  if (gold >= 1000) return "Shiny Collector";
+  if (gold >= 500) return "Coin Poucher";
+  if (gold >= 250) return "Scrap Saver";
+  if (gold >= 100) return "Pocket Goblin";
   return "Goblin Peasant";
 }
 

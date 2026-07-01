@@ -9,10 +9,17 @@ export async function handleInventory(env, url) {
   const player = await getOrCreatePlayer(env, username, displayName);
 
   const items = await env.DB.prepare(
-    `SELECT id, item_name, item_type, rarity, uses_left
-     FROM inventory
-     WHERE username = ?
-     ORDER BY id DESC`
+    `SELECT 
+      inv.id,
+      itm.item_name,
+      itm.item_type,
+      itm.rarity,
+      inv.uses_left
+    FROM inventory inv
+    JOIN items itm
+      ON inv.item_key = itm.item_key
+    WHERE inv.username = ?
+    ORDER BY inv.id DESC`
   ).bind(username).all();
 
   const title = getTitle(player.gold);
