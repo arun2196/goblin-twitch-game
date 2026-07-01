@@ -52,6 +52,15 @@ export default {
         return new Response(`D1 Connected! Test value: ${result.ok}`);
       }
 
+      if (url.pathname === "/dungeon-timer") {
+        return new Response(getDungeonTimerHtml(), {
+          headers: {
+            "Content-Type": "text/html; charset=utf-8",
+            "Cache-Control": "no-store",
+          },
+        });
+      }
+
       if (url.pathname === "/testvoice") {
         const text =
           url.searchParams.get("text") ||
@@ -206,6 +215,146 @@ function getGobboPlayerHtml() {
       pollSound("initial");
     }, 3000);
   </script>
+</body>
+</html>`;
+}
+
+function getDungeonTimerHtml() {
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    body {
+      margin: 0;
+      background: transparent;
+      overflow: hidden;
+      font-family: "Trebuchet MS", Arial, sans-serif;
+      user-select: none;
+    }
+
+    .box {
+      display: inline-block;
+      padding: 10px 18px;
+      background: transparent;
+      text-align: center;
+    }
+
+    .label {
+      font-size: 22px;
+      font-weight: 900;
+      font-family: comic sans ms, "Arial Black", sans-serif;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #000000;
+      text-shadow:
+        1px 1px 0 rgba(255,255,255,0.35);
+    }
+
+    .timer {
+      margin-top: 2px;
+      font-size: 58px;
+      font-family: comic sans ms, "Arial Black", sans-serif;
+      font-weight: 900;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+      color: #111111;
+      text-shadow:
+        1px 1px 0 rgba(255,255,255,0.35);
+    }
+
+    .subtitle {
+      margin-top: -2px;
+      font-size: 13px;
+      font-family: comic sans ms, "Arial Black", sans-serif;
+      font-weight: 900;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: #111111;
+      text-shadow:
+        1px 1px 0 #f7ddb0;
+    }
+
+    .now {
+      font-size: 48px;
+      color: #111111;
+    }
+  </style>
+</head>
+
+<body>
+
+<div class="box">
+  <div class="label">Next Dungeon</div>
+  <div id="timer" class="timer">30:00</div>
+  <div class="subtitle">IN</div>
+</div>
+
+<script>
+
+const timer = document.getElementById("timer");
+
+const gobboMessages = [
+  "DELVE!",
+  "CHARGE!",
+  "LOOT!",
+  "GO GO!",
+  "BONK!",
+  "SMASH!",
+  "DIG IN!"
+];
+
+let lastHalfHour = -1;
+
+function updateTimer() {
+
+  const now = new Date();
+
+  const secondsSinceHour =
+      now.getMinutes() * 60 +
+      now.getSeconds();
+
+  let remaining =
+      1800 - (secondsSinceHour % 1800);
+
+  if (remaining === 1800)
+      remaining = 0;
+
+  if (remaining <= 5) {
+
+      timer.classList.add("now");
+
+      const currentHalfHour =
+          Math.floor(secondsSinceHour / 1800);
+
+      if (currentHalfHour !== lastHalfHour) {
+          lastHalfHour = currentHalfHour;
+
+          timer.textContent =
+              gobboMessages[
+                  Math.floor(Math.random() * gobboMessages.length)
+              ];
+      }
+
+      return;
+  }
+
+  timer.classList.remove("now");
+
+  const minutes = Math.floor(remaining / 60);
+  const seconds = remaining % 60;
+
+  timer.textContent =
+      String(minutes).padStart(2, "0") +
+      ":" +
+      String(seconds).padStart(2, "0");
+}
+
+updateTimer();
+setInterval(updateTimer, 1000);
+
+</script>
+
 </body>
 </html>`;
 }

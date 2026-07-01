@@ -229,7 +229,7 @@ export async function handleDungeon(env, url) {
   const rewards = [];
 
   for (const member of realPlayers) {
-    let amount = success ? randomInt(80, 160) : randomInt(10, 40);
+    let amount = success ? randomInt(80, 160) : 0;
     let bonusAmount = 0;
 
     if (specialEvent) {
@@ -321,9 +321,12 @@ export async function handleDungeon(env, url) {
     console.log("Dungeon commentary failed:", error?.message || error);
   }
 
-  const rewardText = rewards.length
+  const rewardText = rewards.some((r) => r.amount > 0)
     ? " Rewards: " +
-      rewards.map((r) => `${r.displayName} +${r.amount}g`).join(", ") +
+      rewards
+        .filter((r) => r.amount > 0)
+        .map((r) => `${r.displayName} +${r.amount}g`)
+        .join(", ") +
       "."
     : "";
 
