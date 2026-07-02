@@ -159,188 +159,335 @@ async function rewardPlayer(env, username, displayName, amount, reason) {
   ]);
 }
 
+function safeJson(value) {
+  try {
+    return JSON.stringify(value ?? null);
+  } catch {
+    return JSON.stringify({ error: "JSON stringify failed" });
+  }
+}
+
+async function getQueueSnapshot(env) {
+  const result = await env.DB.prepare(`
+    SELECT *
+    FROM dungeon_queue
+    ORDER BY id ASC
+  `).all();
+
+  return result.results || [];
+}
+
+async function createDungeonRun(env, runId, queueSnapshot) {
+  await env.DB.prepare(`
+    INSERT INTO dungeon_runs (
+      run_id,
+      status,
+      queue_snapshot_json
+    )
+    VALUES (?, 'started', ?)
+  `)
+    .bind(runId, safeJson(queueSnapshot))
+    .run();
+}
+
+async function updateDungeonRun(env, runId, fields) {
+  const entries = Object.entries(fields);
+  if (!entries.length) return;
+
+  const setSql = entries.map(([key]) => `${key} = ?`).join(", ");
+  const values = entries.map(([, value]) => value);
+
+  await env.DB.prepare(`
+    UPDATE dungeon_runs
+    SET ${setSql}
+    WHERE run_id = ?
+  `)
+    .bind(...values, runId)
+    .run();
+}
+
+async function logDungeonMember(env, runId, row) {
+  await env.DB.prepare(`
+    INSERT INTO dungeon_run_members (
+      run_id,
+      queue_id,
+      username,
+      display_name,
+      story_name,
+      role,
+      selected,
+      reward_amount,
+      item_name,
+      item_id,
+      item_power
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(
+      runId,
+      row.queueId ?? null,
+      row.username ?? null,
+      row.displayName ?? null,
+      row.storyName ?? null,
+      row.role ?? null,
+      row.selected ? 1 : 0,
+      row.rewardAmount ?? 0,
+      row.itemName ?? null,
+      row.itemId ?? null,
+      row.itemPower ?? null
+    )
+    .run();
+}
+
 export async function handleDungeon(env, url) {
-  console.log("[Dungeon Cron] Starting scheduled dungeon.");
+  const runId = crypto.randomUUID();
 
-  const party = await buildDungeonParty(env);
+  console.log(`[Dungeon Cron] Starting scheduled dungeon. Run: ${runId}`);
 
-  if (!party || party.members.length === 0) {
-    console.log("[Dungeon Cron] No queued players.");
-    return new Response("");
-  }
+  const queueSnapshot = await getQueueSnapshot(env);
+  await createDungeonRun(env, runId, queueSnapshot);
 
-  const encounter = await getRandomDungeonEncounter(env);
+  try {
+    const party = await buildDungeonParty(env);
 
-  if (!encounter) {
-    return new Response("No dungeon encounter found.");
-  }
-
-  let realPlayers = party.members.filter((m) => m.type === "player");
-
-  for (const member of realPlayers) {
-    await ensurePlayer(env, member);
-  }
-
-  realPlayers = await applyStoryNames(env, realPlayers);
-
-  const storyParty = {
-    ...party,
-    members: party.members.map((member) => {
-      if (member.type !== "player") return member;
-
-      return realPlayers.find((p) => p.username === member.username) || member;
-    }),
-  };
-
-  const playerItems = [];
-
-  for (const member of realPlayers) {
-    const item =
-      (await getRandomInventoryItem(env, member.username)) ||
-      makePersonalChampion(member);
-
-    playerItems.push({
-      username: member.username,
-      displayName: member.displayName || member.username,
-      storyName: member.storyName,
-      alias: member.alias,
-      aliases: member.aliases,
-      role: member.role,
-      item,
-      itemPower: getItemPower(item),
+    await updateDungeonRun(env, runId, {
+      party_json: safeJson(party),
+      selected_queue_ids_json: safeJson(party?.playerQueueIds || []),
     });
-  }
 
-  const brokenItems = [];
+    if (!party || party.members.length === 0) {
+      await updateDungeonRun(env, runId, {
+        status: "no_players",
+        finished_at: new Date().toISOString(),
+      });
 
-  const successChance = calculateSuccessChance({
-    party: storyParty,
-    playerItems,
-    encounter,
-  });
-
-  const success = Math.random() * 100 < successChance;
-  const specialEvent = await getRandomDungeonSpecialEvent(env);
-
-  for (const row of playerItems) {
-    await damageItem(env, row.item, brokenItems);
-  }
-
-  const rewards = [];
-
-  for (const member of realPlayers) {
-    let amount = success ? randomInt(80, 160) : 0;
-    let bonusAmount = 0;
-
-    if (specialEvent) {
-      bonusAmount = randomInt(
-        Number(specialEvent.bonus_gold_min || 0),
-        Number(specialEvent.bonus_gold_max || 0)
-      );
-
-      amount += bonusAmount;
+      console.log("[Dungeon Cron] No queued players.");
+      return new Response("");
     }
 
-    await rewardPlayer(
-      env,
-      member.username,
-      member.displayName || member.username,
-      amount,
-      specialEvent
-        ? success
-          ? "dungeon_special_success"
-          : "dungeon_special_failure"
-        : success
-          ? "dungeon_success"
-          : "dungeon_failure"
-    );
+    const encounter = await getRandomDungeonEncounter(env);
 
-    rewards.push({
-      username: member.username,
-      displayName: member.displayName || member.username,
-      storyName: member.storyName,
-      alias: member.alias,
-      amount,
-      bonusAmount,
+    if (!encounter) {
+      await updateDungeonRun(env, runId, {
+        status: "failed",
+        finished_at: new Date().toISOString(),
+        error: "No dungeon encounter found.",
+      });
+
+      return new Response("No dungeon encounter found.");
+    }
+
+    let realPlayers = party.members.filter((m) => m.type === "player");
+
+    for (const member of realPlayers) {
+      await ensurePlayer(env, member);
+    }
+
+    realPlayers = await applyStoryNames(env, realPlayers);
+
+    const storyParty = {
+      ...party,
+      members: party.members.map((member) => {
+        if (member.type !== "player") return member;
+
+        return realPlayers.find((p) => p.username === member.username) || member;
+      }),
+    };
+
+    const playerItems = [];
+
+    for (const member of realPlayers) {
+      const item =
+        (await getRandomInventoryItem(env, member.username)) ||
+        makePersonalChampion(member);
+
+      playerItems.push({
+        username: member.username,
+        displayName: member.displayName || member.username,
+        storyName: member.storyName,
+        alias: member.alias,
+        aliases: member.aliases,
+        role: member.role,
+        item,
+        itemPower: getItemPower(item),
+      });
+    }
+
+    for (const row of playerItems) {
+      const queueRow = queueSnapshot.find((q) => q.username === row.username);
+
+      await logDungeonMember(env, runId, {
+        queueId: queueRow?.id,
+        username: row.username,
+        displayName: row.displayName,
+        storyName: row.storyName,
+        role: row.role,
+        selected: true,
+        itemName: row.item?.item_name,
+        itemId: row.item?.id,
+        itemPower: row.itemPower,
+      });
+    }
+
+    const brokenItems = [];
+
+    const successChance = calculateSuccessChance({
+      party: storyParty,
+      playerItems,
+      encounter,
     });
-  }
 
-  if (party.playerQueueIds?.length) {
-    const placeholders = party.playerQueueIds.map(() => "?").join(",");
+    const success = Math.random() * 100 < successChance;
+    const specialEvent = await getRandomDungeonSpecialEvent(env);
 
-    await env.DB.prepare(`
-      DELETE FROM dungeon_queue
-      WHERE id IN (${placeholders})
-    `)
-      .bind(...party.playerQueueIds)
-      .run();
-  }
+    for (const row of playerItems) {
+      await damageItem(env, row.item, brokenItems);
+    }
 
-  const specialPrompt = specialEvent
-    ? success
-      ? specialEvent.success_prompt
-      : specialEvent.failure_prompt
-    : null;
+    const rewards = [];
 
-  const data = {
-    party: storyParty,
-    encounter,
-    playerItems,
-    heroes: storyParty.members.filter((m) => m.type === "hero"),
-    specialEvent,
-    specialPrompt,
-    result: {
-      success,
-      successChance,
-      rewards,
-      brokenItems,
-    },
-  };
+    for (const member of realPlayers) {
+      let amount = success ? randomInt(80, 160) : 0;
+      let bonusAmount = 0;
 
-  const fallbackNames = storyParty.members
-    .map((m) => m.storyName || m.displayName || m.name || m.username)
-    .join(", ");
+      if (specialEvent && success) {
+        bonusAmount = randomInt(
+          Number(specialEvent.bonus_gold_min || 0),
+          Number(specialEvent.bonus_gold_max || 0)
+        );
 
-  const fallback = specialEvent
-    ? success
-      ? `🌌 ${fallbackNames} survived a Reality Glitch: ${specialEvent.event_name}!`
-      : `🌌 ${fallbackNames} were humbled by a Reality Glitch: ${specialEvent.event_name}!`
-    : success
-      ? `🏰 ${fallbackNames} conquered ${encounter.dungeon_name} and defeated ${encounter.boss_name}!`
-      : `💀 ${fallbackNames} entered ${encounter.dungeon_name}, but ${encounter.boss_name} sent them crawling back.`;
+        amount += bonusAmount;
+      }
 
-  let commentary = fallback;
+      await rewardPlayer(
+        env,
+        member.username,
+        member.displayName || member.username,
+        amount,
+        specialEvent
+          ? success
+            ? "dungeon_special_success"
+            : "dungeon_special_failure"
+          : success
+            ? "dungeon_success"
+            : "dungeon_failure"
+      );
 
-  try {
-    commentary = await generateCommentary(
-      env,
-      specialEvent ? "dungeon_special" : "dungeon",
-      data
-    );
+      rewards.push({
+        username: member.username,
+        displayName: member.displayName || member.username,
+        storyName: member.storyName,
+        alias: member.alias,
+        amount,
+        bonusAmount,
+      });
+    }
+
+    if (party.playerQueueIds?.length) {
+      const placeholders = party.playerQueueIds.map(() => "?").join(",");
+
+      await env.DB.prepare(`
+        DELETE FROM dungeon_queue
+        WHERE id IN (${placeholders})
+      `)
+        .bind(...party.playerQueueIds)
+        .run();
+    }
+
+    const specialPrompt = specialEvent
+      ? success
+        ? specialEvent.success_prompt
+        : specialEvent.failure_prompt
+      : null;
+
+    const data = {
+      party: storyParty,
+      encounter,
+      playerItems,
+      heroes: storyParty.members.filter((m) => m.type === "hero"),
+      specialEvent,
+      specialPrompt,
+      result: {
+        success,
+        successChance,
+        rewards,
+        brokenItems,
+      },
+    };
+
+    const fallbackNames = storyParty.members
+      .map((m) => m.storyName || m.displayName || m.name || m.username)
+      .join(", ");
+
+    const fallback = specialEvent
+      ? success
+        ? `🌌 ${fallbackNames} survived a Reality Glitch: ${specialEvent.event_name}!`
+        : `🌌 ${fallbackNames} were humbled by a Reality Glitch: ${specialEvent.event_name}!`
+      : success
+        ? `🏰 ${fallbackNames} conquered ${encounter.dungeon_name} and defeated ${encounter.boss_name}!`
+        : `💀 ${fallbackNames} entered ${encounter.dungeon_name}, but ${encounter.boss_name} sent them crawling back.`;
+
+    let commentary = fallback;
+
+    try {
+      commentary = await generateCommentary(
+        env,
+        specialEvent ? "dungeon_special" : "dungeon",
+        data
+      );
+    } catch (error) {
+      console.log("Dungeon commentary failed:", error?.message || error);
+    }
+
+    const rewardText = rewards.some((r) => r.amount > 0)
+      ? " Rewards: " +
+        rewards
+          .filter((r) => r.amount > 0)
+          .map((r) => `${r.displayName} +${r.amount}g`)
+          .join(", ") +
+        "."
+      : "";
+
+    const brokenText = brokenItems.length
+      ? ` Broken: ${brokenItems.join(", ")}.`
+      : "";
+
+    const finalMessage = `${commentary}${rewardText}${brokenText}`.slice(0, 490);
+
+    try {
+      await sendTwitchChatMessage(env, finalMessage);
+    } catch (error) {
+      console.log("Dungeon chat post failed:", error?.message || error);
+    }
+
+    const remainingQueue = await getQueueSnapshot(env);
+
+    await updateDungeonRun(env, runId, {
+      status: "completed",
+      finished_at: new Date().toISOString(),
+      remaining_queue_json: safeJson(remainingQueue),
+      encounter_json: safeJson(encounter),
+      special_event_json: safeJson(specialEvent),
+      player_items_json: safeJson(playerItems),
+      rewards_json: safeJson(rewards),
+      broken_items_json: safeJson(brokenItems),
+      success: success ? 1 : 0,
+      success_chance: successChance,
+      fallback_message: fallback,
+      commentary,
+      final_message: finalMessage,
+    });
+
+    return new Response(finalMessage);
   } catch (error) {
-    console.log("Dungeon commentary failed:", error?.message || error);
+    console.log("Dungeon run failed:", error?.message || error);
+
+    await updateDungeonRun(env, runId, {
+      status: "failed",
+      finished_at: new Date().toISOString(),
+      error: String(error?.stack || error?.message || error),
+    });
+
+    return new Response("Dungeon run failed.", { status: 500 });
   }
-
-  const rewardText = rewards.some((r) => r.amount > 0)
-    ? " Rewards: " +
-      rewards
-        .filter((r) => r.amount > 0)
-        .map((r) => `${r.displayName} +${r.amount}g`)
-        .join(", ") +
-      "."
-    : "";
-
-  const brokenText = brokenItems.length
-    ? ` Broken: ${brokenItems.join(", ")}.`
-    : "";
-
-  const finalMessage = `${commentary}${rewardText}${brokenText}`.slice(0, 490);
-
-  try {
-    await sendTwitchChatMessage(env, finalMessage);
-  } catch (error) {
-    console.log("Dungeon chat post failed:", error?.message || error);
-  }
-
-  return new Response(finalMessage);
 }

@@ -14,6 +14,7 @@ import { handleEventSub } from "./commands/twitch.js";
 import { handleQueue } from "./commands/queue.js";
 import { handleDungeon } from "./commands/dungeon.js";
 import { handleAlias } from "./commands/alias.js";
+import { handleQueueList } from "./commands/queueList.js";
 
 import { generateGobboSpeech } from "./helpers/gobboVoice.js";
 import { uploadAudioToR2 } from "./helpers/r2.js";
@@ -36,6 +37,7 @@ const routes = {
   "/dungeon": handleDungeon,
   "/alias": handleAlias,
   "/nickname": handleAlias,
+  "/queuelist": handleQueueList,
 };
 
 export default {
