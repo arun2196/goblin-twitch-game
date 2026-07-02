@@ -25,5 +25,5 @@ export async function handleQueueList(env) {
 
   await sendTwitchChatMessage(env, message);
 
-  return new Response(message);
+  return new Response("");
 }

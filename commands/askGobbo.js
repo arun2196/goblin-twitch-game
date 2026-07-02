@@ -308,7 +308,7 @@ async function askGemini(env, prompt) {
             generationConfig: {
               temperature: 1.15,
               topP: 0.92,
-              maxOutputTokens: 400,
+              maxOutputTokens: 650,
               thinkingConfig: {
                 thinkingBudget: 0,
               },
