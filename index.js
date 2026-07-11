@@ -15,6 +15,7 @@ import { handleQueue } from "./commands/queue.js";
 import { handleDungeon } from "./commands/dungeon.js";
 import { handleAlias } from "./commands/alias.js";
 import { handleQueueList } from "./commands/queueList.js";
+import { handleSmite } from "./commands/smite.js";
 
 import { generateGobboSpeech } from "./helpers/gobboVoice.js";
 import { uploadAudioToR2 } from "./helpers/r2.js";
@@ -38,6 +39,7 @@ const routes = {
   "/alias": handleAlias,
   "/nickname": handleAlias,
   "/queuelist": handleQueueList,
+  "/smite": handleSmite,
 };
 
 export default {
@@ -317,9 +319,9 @@ function updateTimer() {
       now.getSeconds();
 
   let remaining =
-      1800 - (secondsSinceHour % 1800);
+      3600 - (secondsSinceHour % 3600);
 
-  if (remaining === 1800)
+  if (remaining === 3600)
       remaining = 0;
 
   if (remaining <= 5) {
@@ -327,7 +329,7 @@ function updateTimer() {
       timer.classList.add("now");
 
       const currentHalfHour =
-          Math.floor(secondsSinceHour / 1800);
+          Math.floor(secondsSinceHour / 3600);
 
       if (currentHalfHour !== lastHalfHour) {
           lastHalfHour = currentHalfHour;

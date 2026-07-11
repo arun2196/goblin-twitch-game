@@ -19,7 +19,7 @@ export function cleanDisplayName(name) {
 }
 
 export function getTitle(gold) {
-  if (gold >= 100000) return "Goblin Emperor";
+  if (gold >= 100000) return "Emperor of the GobboKind";
   if (gold >= 75000) return "High King of the Hoard";
   if (gold >= 50000) return "Goblin King";
   if (gold >= 35000) return "Crownhoard Lord";

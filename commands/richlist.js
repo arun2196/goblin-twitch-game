@@ -3,7 +3,7 @@ export async function handleRichlist(env) {
     `SELECT display_name, gold
      FROM players
      ORDER BY gold DESC
-     LIMIT 5`
+     LIMIT 10`
   ).all();
 
   if (!rows.results.length) {

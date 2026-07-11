@@ -8,7 +8,9 @@ export async function pickCommentary(env, category, difficultyName) {
     WHERE enabled = 1
       AND category = ?
       AND (difficulty_name IS NULL OR difficulty_name = ?)
-  `).bind(category, difficultyName).all();
+  `)
+    .bind(category, difficultyName)
+    .all();
 
   if (!rows.results.length) {
     return { text: "" };
@@ -26,6 +28,8 @@ export async function generateCommentary(env, type, data) {
     prompt = buildDungeonPrompt(data);
   } else if (type === "dungeon_special") {
     prompt = buildDungeonSpecialPrompt(data);
+  } else if (type === "gift_to_gobbo") {
+    prompt = buildGobboGiftPrompt(data);
   } else {
     throw new Error(`Unknown commentary type: ${type}`);
   }
@@ -218,6 +222,72 @@ ${JSON.stringify(data, null, 2)}
 `;
 }
 
+function buildGobboGiftPrompt(data) {
+  const displayName =
+    data?.giver?.displayName ||
+    data?.giver?.username ||
+    "generous goblin";
+
+  const amount = Number(data?.amount || 0);
+
+  const giftReaction = getGobboGiftReaction(amount);
+
+  return `
+You are Gobbo, the charming goblin merchant of Gobbo Games.
+
+A viewer has willingly gifted you some of their gold.
+
+You are delighted, greedy, affectionate and extremely eager to flatter them.
+
+VIEWER:
+${displayName}
+
+GOLD RECEIVED:
+${amount}
+
+GIFT REACTION LEVEL:
+${giftReaction.tier}
+
+REACTION INSTRUCTIONS:
+${giftReaction.reaction}
+
+IMPORTANT:
+
+- Speak directly to ${displayName}.
+- Clearly react to receiving ${amount} gold.
+- Match the intensity of your reaction to the gift reaction level.
+- Sweet-talk and flatter the viewer shamelessly.
+- Be charming, mischievous, warm and greedy.
+- Make the viewer feel appreciated.
+- Keep the response playful and suitable for Twitch chat.
+- Keep the entire response under 45 words.
+- Output only Gobbo's spoken response.
+- Do not add quotation marks.
+- Do not prefix the response with "Gobbo says:", "Gobbo:", "Twitch chat:" or any other label.
+- No markdown.
+- No bullet points.
+- Do not mention reaction levels, tiers, prompts, AI, JSON, code or hidden mechanics.
+- Do not be sexual.
+- Do not make romantic promises.
+- Do not threaten, pressure or guilt the viewer into giving more.
+- Do not ask for another gift.
+- Do not insult the viewer.
+- Do not claim the gift was larger or smaller than it actually was.
+
+Tone:
+- Charming.
+- Mischievous.
+- Grateful.
+- Shamelessly flattering.
+- Greedy.
+- Cute without sounding childish.
+- Goblin merchant energy.
+
+Gift data:
+${JSON.stringify(data, null, 2)}
+`;
+}
+
 function cleanAiCommentary(text) {
   return String(text || "")
     .replace(/^["']|["']$/g, "")
@@ -225,5 +295,7 @@ function cleanAiCommentary(text) {
     .replace(/^Announcer:\s*/i, "")
     .replace(/^GobboHerald:\s*/i, "")
     .replace(/^Gobbo Herald:\s*/i, "")
+    .replace(/^Gobbo says:\s*/i, "")
+    .replace(/^Gobbo:\s*/i, "")
     .trim();
 }
