@@ -213,7 +213,7 @@ function getGobboPlayerHtml() {
 
     setInterval(() => {
       pollSound("interval");
-    }, 30000);
+    }, 10000);
 
     setTimeout(() => {
       pollSound("initial");

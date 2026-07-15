@@ -347,7 +347,7 @@ export async function handleDungeon(env, url) {
     const rewards = [];
 
     for (const member of realPlayers) {
-      let amount = success ? randomInt(80, 160) : 0;
+      let amount = success ? randomInt(160, 320) : randomInt(20, 80);
       let bonusAmount = 0;
 
       if (specialEvent && success) {
