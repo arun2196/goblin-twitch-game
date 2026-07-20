@@ -359,6 +359,20 @@ export async function handleDungeon(env, url) {
         amount += bonusAmount;
       }
 
+      const player = await env.DB.prepare(`
+        SELECT gold
+        FROM players
+        WHERE username = ?
+      `)
+        .bind(member.username)
+        .first();
+
+      const catchUpBonus = Number(player?.gold || 0) < 5000;
+
+      if (catchUpBonus) {
+        amount *= 2;
+      }
+
       await rewardPlayer(
         env,
         member.username,
@@ -380,6 +394,7 @@ export async function handleDungeon(env, url) {
         alias: member.alias,
         amount,
         bonusAmount,
+        catchUpBonus,
       });
     }
 
