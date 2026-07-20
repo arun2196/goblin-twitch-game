@@ -32,8 +32,8 @@ export async function handleChest(env, url) {
   else if (currentGold < 250) bonusMultiplier = 1.35;
   else if (currentGold < 500) bonusMultiplier = 1.15;
 
-  const baseGold = randomInt(8, 25);
-  const foundGold = Math.floor(baseGold * bonusMultiplier);
+  const baseGold = randomInt(8, 25) * 3;
+  const foundGold = Math.floor(baseGold * bonusMultiplier * 3);
 
   const items = await env.DB.prepare(
     `SELECT *

@@ -319,9 +319,9 @@ function updateTimer() {
       now.getSeconds();
 
   let remaining =
-      3600 - (secondsSinceHour % 3600);
+      1800 - (secondsSinceHour % 1800);
 
-  if (remaining === 3600)
+  if (remaining === 1800)
       remaining = 0;
 
   if (remaining <= 5) {
@@ -329,7 +329,7 @@ function updateTimer() {
       timer.classList.add("now");
 
       const currentHalfHour =
-          Math.floor(secondsSinceHour / 3600);
+          Math.floor(secondsSinceHour / 1800);
 
       if (currentHalfHour !== lastHalfHour) {
           lastHalfHour = currentHalfHour;

@@ -68,7 +68,9 @@ export async function handleDelve(env, url) {
   const baseGold = didFail ? -randomInt(5, 20) : randomInt(10, 40);
 
   const rolledGoldChange = Math.floor(
-    baseGold * Number(difficulty.gold_multiplier || 1)
+    baseGold *
+      Number(difficulty.gold_multiplier || 1) *
+      (didFail ? 1 : 2)
   );
 
   const currentGold = Number(player.gold || 0);

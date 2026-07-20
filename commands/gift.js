@@ -1,3 +1,4 @@
+import { randomInt } from "../helpers/random.js";
 import {
   cleanUsername,
   cleanDisplayName,
@@ -93,8 +94,11 @@ async function handlePlayerGift(
     );
   }
 
-  const tax = Math.floor(amount * 0.05);
-  const receivedAmount = amount - tax;
+  // Final 48-hour event:
+  // The Treasury adds a random 10%–50% bonus to every player gift.
+  const bonusPercent = randomInt(10, 50);
+  const bonusAmount = Math.floor(amount * (bonusPercent / 100));
+  const receivedAmount = amount + bonusAmount;
 
   await env.DB.batch([
     env.DB.prepare(`
@@ -143,8 +147,21 @@ async function handlePlayerGift(
       VALUES (?, ?, ?)
     `).bind(
       target,
-      receivedAmount,
+      amount,
       "gift_received"
+    ),
+
+    env.DB.prepare(`
+      INSERT INTO transactions (
+        username,
+        amount,
+        reason
+      )
+      VALUES (?, ?, ?)
+    `).bind(
+      target,
+      bonusAmount,
+      "gift_treasury_bonus"
     ),
 
     env.DB.prepare(`
@@ -155,12 +172,24 @@ async function handlePlayerGift(
       VALUES (?, ?)
     `).bind(
       "gift",
-      `${giver.display_name} gifted ${receivedAmount} gold to ${receiver.display_name}. The treasury took ${tax}g.`
+      `${giver.display_name} gifted ${amount} gold to ${receiver.display_name}. The treasury added ${bonusAmount}g (${bonusPercent}%), for a total of ${receivedAmount}g.`
     ),
   ]);
 
+  const giftResponses = [
+    `🎁 ${giver.display_name} gifted ${amount}g to ${receiver.display_name}! The Treasury added a ${bonusPercent}% bonus: +${bonusAmount}g. Total received: ${receivedAmount}g!`,
+
+    `💰 ${giver.display_name} sent ${amount}g to ${receiver.display_name}, and the Goblin Treasury matched it with an extra ${bonusAmount}g! ${receivedAmount}g received.`,
+
+    `🍀 Gift boosted! ${giver.display_name} gave ${amount}g to ${receiver.display_name}. Treasury blessing: +${bonusPercent}% (${bonusAmount}g). Final gift: ${receivedAmount}g.`,
+
+    `🏦 The Treasury is feeling generous! ${giver.display_name}'s ${amount}g gift to ${receiver.display_name} grew by ${bonusAmount}g. Total: ${receivedAmount}g.`,
+
+    `✨ ${giver.display_name} gifted ${amount}g to ${receiver.display_name}. Goblin accounting somehow added ${bonusAmount}g instead of stealing it. Total: ${receivedAmount}g!`,
+  ];
+
   return new Response(
-    `🎁 ${giver.display_name} gifted ${receivedAmount}g to ${receiver.display_name}. Treasury tax: ${tax}g.`
+    giftResponses[randomInt(0, giftResponses.length - 1)]
   );
 }
 

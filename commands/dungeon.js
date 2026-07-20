@@ -352,8 +352,8 @@ export async function handleDungeon(env, url) {
 
       if (specialEvent && success) {
         bonusAmount = randomInt(
-          Number(specialEvent.bonus_gold_min || 0) * 2,
-          Number(specialEvent.bonus_gold_max || 0) * 2
+          Number(specialEvent.bonus_gold_min || 0) * 4,
+          Number(specialEvent.bonus_gold_max || 0) * 4
         );
 
         amount += bonusAmount;
