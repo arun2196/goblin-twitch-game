@@ -20,6 +20,9 @@ import { handleSmite } from "./commands/smite.js";
 import { generateGobboSpeech } from "./helpers/gobboVoice.js";
 import { uploadAudioToR2 } from "./helpers/r2.js";
 import { getNextGobboSound } from "./helpers/gobboSoundQueue.js";
+import {
+  handleStoryCommand,
+} from "./story-weaver/StoryCommandHandler.js";
 
 
 const routes = {
@@ -152,17 +155,57 @@ export default {
 
       const handler = routes[url.pathname];
 
-      if (!handler) {
-        return new Response(
-          "Goblin RPG Worker is alive."
+      if (handler) {
+        return await handler(
+          env,
+          url,
+          request,
+          ctx
         );
       }
 
-      return await handler(
-        env,
-        url,
-        request,
-        ctx
+      // Dynamic Story Weaver commands.
+      // Examples: /raid, /option1, /dive
+      const command = url.pathname
+        .replace(/^\/+/, "")
+        .trim()
+        .toLowerCase();
+
+      const username =
+        url.searchParams.get("username") ||
+        url.searchParams.get("user") ||
+        "";
+
+      const displayName =
+        url.searchParams.get("displayName") ||
+        url.searchParams.get("display_name") ||
+        username;
+
+      const storyResult =
+        await handleStoryCommand({
+          env,
+          command,
+          username,
+          displayName,
+        });
+
+      if (storyResult.handled) {
+        return Response.json(
+          {
+            ok: storyResult.ok,
+            message: storyResult.message,
+          },
+          {
+            status: storyResult.ok ? 200 : 400,
+          }
+        );
+      }
+
+      return new Response(
+        "Goblin RPG Worker is alive.",
+        {
+          status: 404,
+        }
       );
     } catch (err) {
       console.error(
