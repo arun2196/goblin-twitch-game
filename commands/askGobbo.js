@@ -9,13 +9,15 @@ import { queueGobboSound } from "../helpers/gobboSoundQueue.js";
 import { buildGobboPrompt } from "../helpers/gobboPrompt.js";
 import { sendTwitchChatMessage } from "../helpers/twitchChat.js";
 
-const ASK_GOBBO_COST = 75;
+const ASK_GOBBO_COST = 0;
 const MAX_QUESTION_LENGTH = 220;
 const NARRATOR_VOICE_ID = "B4WD87mB08osg18bpXRF";
 
 const TWITCH_SAFE_LIMIT = 480;
 
 export async function handleAskGobbo(env, url, request, ctx) {
+  console.log("[S3] AskGobbo endpoint reached.");
+  console.log("Env keys:", Object.keys(env).sort());
   const username = cleanUsername(url.searchParams.get("user"));
   const displayName = cleanDisplayName(url.searchParams.get("user"));
 
@@ -36,7 +38,6 @@ export async function handleAskGobbo(env, url, request, ctx) {
     ctx,
     eventType: "ask_gobbo",
   });
-
   return new Response(result.message);
 }
 

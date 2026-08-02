@@ -16,14 +16,15 @@ import { handleDungeon } from "./commands/dungeon.js";
 import { handleAlias } from "./commands/alias.js";
 import { handleQueueList } from "./commands/queueList.js";
 import { handleSmite } from "./commands/smite.js";
-
 import { generateGobboSpeech } from "./helpers/gobboVoice.js";
 import { uploadAudioToR2 } from "./helpers/r2.js";
 import { getNextGobboSound } from "./helpers/gobboSoundQueue.js";
+import { randomInt } from "./helpers/random.js";
 import {
-  handleStoryCommand,
-} from "./story-weaver/StoryCommandHandler.js";
-
+  handleRaidAdmin,
+  handleRaidCommand,
+  processDueRaidEncounter,
+} from "./raid/RaidEngine.js";
 
 const routes = {
   "/gold": handleGold,
@@ -50,14 +51,24 @@ export default {
   async scheduled(event, env, ctx) {
     console.log("[Cron] Triggered:", event.cron);
 
-    // Runs at xx:30 UTC, which is xx:00 IST.
     if (event.cron === "0,30 * * * *") {
       ctx.waitUntil(runDungeonCron(env));
       return;
     }
 
-    console.log("[Cron] Unknown schedule:", event.cron);
-  },
+    if (event.cron === "* * * * *") {
+      ctx.waitUntil(
+        processDueRaidEncounter(env)
+      );
+
+      return;
+    }
+
+  console.log(
+    "[Cron] Unknown schedule:",
+    event.cron
+  );
+},
 
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -78,6 +89,18 @@ export default {
             "Cache-Control": "no-store",
           },
         });
+      }
+
+      if (
+        url.pathname.startsWith(
+          "/raid-admin/"
+        )
+      ) {
+        return await handleRaidAdmin(
+          request,
+          env,
+          url
+        );
       }
 
       if (url.pathname === "/testvoice") {
@@ -164,48 +187,53 @@ export default {
         );
       }
 
-      // Dynamic Story Weaver commands.
-      // Examples: /raid, /option1, /dive
-      const command = url.pathname
+      // Existing commands always take priority.
+      // Only unknown single-part paths reach Story Weaver.
+      const commandPath = url.pathname
         .replace(/^\/+/, "")
-        .trim()
-        .toLowerCase();
+        .trim();
+
+      const command =
+        commandPath.includes("/")
+          ? ""
+          : commandPath.toLowerCase();
 
       const username =
         url.searchParams.get("username") ||
         url.searchParams.get("user") ||
+        url.searchParams.get("sender") ||
         "";
 
       const displayName =
         url.searchParams.get("displayName") ||
         url.searchParams.get("display_name") ||
+        url.searchParams.get("display") ||
         username;
 
-      const storyResult =
-        await handleStoryCommand({
+      const raidResult =
+        await handleRaidCommand({
           env,
           command,
           username,
           displayName,
         });
 
-      if (storyResult.handled) {
-        return Response.json(
+      if (raidResult.handled) {
+        return new Response(
+          raidResult.message || "",
           {
-            ok: storyResult.ok,
-            message: storyResult.message,
-          },
-          {
-            status: storyResult.ok ? 200 : 400,
+            status: 200,
+            headers: {
+              "Content-Type":
+                "text/plain; charset=utf-8",
+              "Cache-Control": "no-store",
+            },
           }
         );
       }
 
       return new Response(
-        "Goblin RPG Worker is alive.",
-        {
-          status: 404,
-        }
+        "Goblin RPG Worker is alive."
       );
     } catch (err) {
       console.error(

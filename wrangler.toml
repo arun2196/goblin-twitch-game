@@ -9,5 +9,9 @@ database_id = "e39c0e15-df3d-48d8-9038-1112a472189c"
 
 [triggers]
 crons = [
-  "0,30 * * * *"
+  "0,30 * * * *",
+  "* * * * *"
 ]
+
+[vars]
+RAID_ADMINS = "eryynftw,gobboherald"

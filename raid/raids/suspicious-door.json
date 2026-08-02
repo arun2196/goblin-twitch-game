@@ -1,0 +1,133 @@
+{
+  "key": "suspicious-door",
+  "version": 2,
+  "title": "The Extremely Suspicious Door",
+
+  "settings": {
+    "allowChoiceChanges": true
+  },
+
+  "encounters": [
+    {
+      "key": "suspicious-door",
+      "title": "The Suspicious Door",
+      "type": "majority-choice",
+
+      "timing": {
+        "joinMinutes": 2,
+        "maximumAttempts": 5,
+        "forceSuccessOnFinalAttempt": true
+      },
+
+      "narration": {
+        "intro": "The gobbos discover a door labelled DEFINITELY NOT A TRAP.",
+
+        "join": "Choose your approach with !open or !kick. Story Weaver will judge the attempt in 2 minutes.",
+
+        "retry": "The surviving gobbos remain committed. Reinforcements may still join before the next attempt.",
+
+        "success": "The door has been thoroughly defeated.",
+
+        "attempts": {
+          "1": {
+            "failure": "The gobbos charge, but the suspicious door refuses to yield. Its frame creaks, however, and one hinge now hangs slightly loose."
+          },
+
+          "2": {
+            "failure": "The second assault also fails. Splinters scatter across the floor, and the door is now leaning at a distinctly unhealthy angle."
+          },
+
+          "3": {
+            "failure": "The gobbos are thrown back again, but a deep crack now divides the centre of the door."
+          },
+
+          "4": {
+            "failure": "The fourth assault nearly destroys it. One final push should reduce this arrogant piece of furniture to firewood."
+          },
+
+          "5": {
+            "success": "The gobbos launch one final magnificent charge. The suspicious door explodes into splinters and immediately regrets everything."
+          }
+        }
+      },
+
+      "inputs": [
+        {
+          "key": "open",
+          "command": "open",
+          "label": "Open the door"
+        },
+        {
+          "key": "kick",
+          "command": "kick",
+          "label": "Kick the door"
+        }
+      ],
+
+      "mechanics": {
+        "winningInput": "kick"
+      }
+    },
+
+    {
+      "key": "hinge-beast",
+      "title": "The Hinge Beast",
+      "type": "group-roll",
+
+      "timing": {
+        "joinMinutes": 2,
+        "maximumAttempts": 5,
+        "forceSuccessOnFinalAttempt": true
+      },
+
+      "narration": {
+        "intro": "A creature made entirely of hinges and poor decisions crawls out from behind the broken door.",
+
+        "join": "Join the battle with !raid. Story Weaver will resolve the assault in 2 minutes.",
+
+        "retry": "The gobbos already fighting remain in battle. Reinforcements may join with !raid before the next assault.",
+
+        "success": "The Hinge Beast collapses into a pile of scrap and deeply offended screws.",
+
+        "attempts": {
+          "1": {
+            "failure": "The Hinge Beast throws back the first assault. Its armour remains intact, but one upper hinge now groans with every movement."
+          },
+
+          "2": {
+            "failure": "The second attack fails, though cracks spread across the beast's left side and rusty plates begin falling away."
+          },
+
+          "3": {
+            "failure": "The gobbos are repelled again. The Hinge Beast survives, but its central mechanism is now exposed."
+          },
+
+          "4": {
+            "failure": "The fourth assault nearly finishes it. Its armour hangs loose, its frame buckles, and one final charge should be enough."
+          },
+
+          "5": {
+            "success": "The gobbos strike the exposed mechanism together. The Hinge Beast collapses into a glorious pile of scrap."
+          }
+        }
+      },
+
+      "inputs": [
+        {
+          "key": "join",
+          "command": "raid",
+          "label": "Join the battle"
+        }
+      ],
+
+      "mechanics": {
+        "playerSides": 10,
+        "enemySides": 10,
+        "enemyDiceOffset": 0,
+        "flatPlayerBonus": 1,
+        "retryPlayerBonus": 2,
+        "tiesWin": true
+      }
+    }
+  ]
+}
