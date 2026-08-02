@@ -55,35 +55,9 @@ async function handleChatMessage(event, request, env, ctx, messageId) {
     return new Response("OK", { status: 200 });
   }
 
-  if (chatterLogin.toLowerCase() === "gobboherald") {
-    return new Response("OK", { status: 200 });
-  }
-
-  const claimed = await claimEventSubMessage(env, messageId);
-
-  if (!claimed) {
-    console.log("Duplicate chat EventSub ignored:", messageId);
-    return new Response("OK", { status: 200 });
-  }
-
-  const question = text.replace(/^!askgobbo\s*/i, "").trim();
-
-  console.log("AskGobbo chat command detected:", chatterLogin, question);
-
-  ctx.waitUntil(
-    runAskGobbo({
-      env,
-      username: chatterLogin,
-      displayName: chatterName,
-      question,
-      chargeGold: true,
-      makeVoice: false,
-      origin: new URL(request.url).origin,
-      ctx,
-      eventType: "ask_gobbo",
-    }).catch((err) => {
-      console.error("AskGobbo chat failed:", err.message);
-    })
+  console.log(
+    "[S2] AskGobbo is disabled during the S3 migration:",
+    chatterLogin
   );
 
   return new Response("OK", { status: 200 });
