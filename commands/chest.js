@@ -8,15 +8,80 @@ import { randomInt, pickWeighted } from "../helpers/random.js";
 
 const MAX_INVENTORY_ITEMS = 3;
 
-export async function handleChest(env, url) {
-  const username = cleanUsername(url.searchParams.get("user"));
-  const displayName = cleanDisplayName(url.searchParams.get("user"));
+/**
+ * Replaces supported placeholders inside a Gobbo's chest message.
+ *
+ * Supported placeholders:
+ * {player}
+ * {item}
+ * {gold}
+ * {type}
+ * {rarity}
+ * {power}
+ */
+function formatChestMessage(item, player, foundGold) {
+  const fallbackMessages = [
+    "✨ {item} hops out of the chest carrying {gold}g.",
+    "📦 The chest rattles open and reveals {item} beside {gold}g.",
+    "🎉 {item} emerges from the chest with {gold}g in tow.",
+  ];
 
-  if (!username) return new Response("Usage: !chest");
+  let templates = fallbackMessages;
+
+  if (item.chest_message) {
+    try {
+      const parsed = JSON.parse(item.chest_message);
+
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        templates = parsed.filter(
+          (message) =>
+            typeof message === "string" && message.trim().length > 0
+        );
+      } else if (typeof parsed === "string" && parsed.trim()) {
+        templates = [parsed];
+      }
+    } catch {
+      // Supports old rows that contain one normal text message.
+      templates = [item.chest_message];
+    }
+  }
+
+  if (!templates.length) {
+    templates = fallbackMessages;
+  }
+
+  const template = templates[randomInt(0, templates.length - 1)];
+
+  const replacements = {
+    "{player}": player.display_name,
+    "{item}": item.item_name,
+    "{gold}": String(foundGold),
+    "{type}": item.item_type,
+    "{rarity}": item.rarity,
+    "{power}": String(item.power || 1),
+  };
+
+  let message = template;
+
+  for (const [placeholder, value] of Object.entries(replacements)) {
+    message = message.split(placeholder).join(value ?? "");
+  }
+
+  return message.trim();
+}
+
+export async function handleChest(env, url) {
+  const rawUser = url.searchParams.get("user");
+  const username = cleanUsername(rawUser);
+  const displayName = cleanDisplayName(rawUser);
+
+  if (!username) {
+    return new Response("Usage: !chest");
+  }
 
   const player = await getOrCreatePlayer(env, username, displayName);
 
-  const inventoryCount = await env.DB.prepare(
+  const inventoryCountResult = await env.DB.prepare(
     `SELECT COUNT(*) AS count
      FROM inventory
      WHERE username = ?`
@@ -24,16 +89,21 @@ export async function handleChest(env, url) {
     .bind(username)
     .first();
 
+  const inventoryCount = Number(inventoryCountResult?.count || 0);
   const currentGold = Number(player.gold || 0);
 
   let bonusMultiplier = 1;
 
-  if (currentGold < 100) bonusMultiplier = 1.6;
-  else if (currentGold < 250) bonusMultiplier = 1.35;
-  else if (currentGold < 500) bonusMultiplier = 1.15;
+  if (currentGold < 100) {
+    bonusMultiplier = 1.0;
+  } else if (currentGold < 250) {
+    bonusMultiplier = 1.0;
+  } else if (currentGold < 500) {
+    bonusMultiplier = 1.0;
+  }
 
-  const baseGold = randomInt(8, 25) * 3;
-  const foundGold = Math.floor(baseGold * bonusMultiplier * 3);
+  const baseGold = randomInt(8, 25);
+  const foundGold = Math.floor(baseGold * bonusMultiplier);
 
   const items = await env.DB.prepare(
     `SELECT *
@@ -44,44 +114,53 @@ export async function handleChest(env, url) {
     .bind(currentGold)
     .all();
 
-  if (!items.results.length) {
+  if (!items.results?.length) {
     return new Response(
-      "No champions exist in the database yet. Add rows to the items table first."
+      "No Gobbos exist in the database yet. Add rows to the items table first."
     );
   }
 
   const item = pickWeighted(items.results);
 
-  if (inventoryCount.count >= MAX_INVENTORY_ITEMS) {
+  if (inventoryCount >= MAX_INVENTORY_ITEMS) {
     const failLines = [
-      "but their warband was full, so the chest goblin slammed it shut.",
-      "but they had no room, so the champion wandered off to find better management.",
-      "but their pockets were full of nonsense, so the recruit escaped.",
-      "but Goblin Warband Law says 3 champions only. The loot union rejected the claim.",
-      "but a tiny goblin accountant yelled NO SPACE and confiscated everything.",
+      "but their Gobbo collection was full, so the chest snapped shut.",
+      "but they had no room, so the Gobbo wandered away in search of a less crowded backpack.",
+      "but their pockets were already full of Gobbos and questionable supplies.",
+      "but Gobbo Law allows only 3 companions at a time. The claim was rejected.",
+      "but a tiny Gobbo accountant shouted NO SPACE and cancelled the transaction.",
+      "but three Gobbos were already crammed into their inventory and refused to move over.",
+      "but the new Gobbo took one look at the crowded inventory and quietly closed the chest again.",
     ];
 
     const flavor = failLines[randomInt(0, failLines.length - 1)];
+
+    const failedEventMessage =
+      `${player.display_name} opened a chest containing ` +
+      `${foundGold} gold and ${item.item_name}, but their inventory was full.`;
 
     await env.DB.prepare(
       `INSERT INTO events (event_type, message)
        VALUES (?, ?)`
     )
-      .bind(
-        "chest_failed_full_inventory",
-        `${player.display_name} saw ${foundGold} gold and ${item.item_name}, but their warband was full.`
-      )
+      .bind("chest_failed_full_inventory", failedEventMessage)
       .run();
 
-    return new Response(
-      `${player.display_name} opened a chest and saw ${foundGold}g + ${item.item_name} [${item.item_type}, ${item.rarity}]... ${flavor}`.slice(
-        0,
-        490
-      )
-    );
+    const responseMessage =
+      `${player.display_name} opened a chest and spotted ` +
+      `${foundGold}g and ${item.item_name} ` +
+      `[${item.item_type}, ${item.rarity}], ${flavor}`;
+
+    return new Response(responseMessage.slice(0, 490));
   }
 
+  /*
+   * Durability is still stored in inventory.
+   * It is no longer shown in the chest-opening response.
+   */
   const usesLeft = Number(item.durability || 1);
+
+  const chestMessage = formatChestMessage(item, player, foundGold);
 
   await env.DB.batch([
     env.DB.prepare(
@@ -114,14 +193,21 @@ export async function handleChest(env, url) {
        VALUES (?, ?)`
     ).bind(
       "chest",
-      `${player.display_name} opened a chest and recruited ${item.item_name}, plus ${foundGold} gold.`
+      `${player.display_name} opened a chest and found ` +
+        `${item.item_name} [${item.item_type}, ${item.rarity}], ` +
+        `plus ${foundGold} gold.`
     ),
   ]);
 
-  return new Response(
-    `${player.display_name} opened a chest! Found ${foundGold}g and recruited ${item.item_name} [${item.item_type}, ${item.rarity}, ${usesLeft} durability].`.slice(
-      0,
-      490
-    )
-  );
+  const description = item.description
+    ? ` ${item.description}`
+    : "";
+
+  const responseMessage =
+    `${player.display_name} opened a chest! ` +
+    `${chestMessage} ` +
+    `[${item.item_type}, ${item.rarity}].` +
+    description;
+
+  return new Response(responseMessage.slice(0, 490));
 }

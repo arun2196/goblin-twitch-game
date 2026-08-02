@@ -18,7 +18,7 @@ export async function handleChallenge(env, url) {
   }
 
   if (challenger === target) {
-    return new Response("You cannot duel yourself, unstable goblin.");
+    return new Response("You cannot challenge yourself, unstable goblin.");
   }
 
   const challengerPlayer = await getOrCreatePlayer(
@@ -27,16 +27,22 @@ export async function handleChallenge(env, url) {
     challengerDisplay
   );
 
-  const targetPlayer = await getOrCreatePlayer(env, target, targetDisplay);
+  const targetPlayer = await getOrCreatePlayer(
+    env,
+    target,
+    targetDisplay
+  );
 
-  if (challengerPlayer.gold < 1) {
+  if (Number(challengerPlayer.gold || 0) < 1) {
     return new Response(
       `${challengerPlayer.display_name}, you need at least 1g to challenge someone.`
     );
   }
 
-  if (targetPlayer.gold < 1) {
-    return new Response(`${targetPlayer.display_name} has no gold to wager.`);
+  if (Number(targetPlayer.gold || 0) < 1) {
+    return new Response(
+      `${targetPlayer.display_name} has no gold to wager.`
+    );
   }
 
   const poorerGold = Math.min(
@@ -44,7 +50,10 @@ export async function handleChallenge(env, url) {
     Number(targetPlayer.gold || 0)
   );
 
-  const maxStake = Math.max(1, Math.min(100, Math.floor(poorerGold * 0.2)));
+  const maxStake = Math.max(
+    1,
+    Math.min(100, Math.floor(poorerGold * 0.2))
+  );
 
   let stake = rawStake;
 
@@ -57,16 +66,19 @@ export async function handleChallenge(env, url) {
   }
 
   if (stake < 1) {
-    return new Response("Neither goblin has enough gold for a challenge.");
+    return new Response(
+      "Neither goblin has enough gold for a challenge."
+    );
   }
 
   let stakeNote = "";
 
   if (!Number.isInteger(rawStake) || rawStake <= 0) {
     stakeNote =
-      " No wager was given, so the Goblin Treasury picked a safe stake.";
+      ` No wager was given, so the Goblin Treasury selected ${stake}g.`;
   } else if (rawStake > maxStake) {
-    stakeNote = ` Requested stake was too high, so the Goblin Treasury capped it at ${stake}g.`;
+    stakeNote =
+      ` The Goblin Treasury capped the wager at ${stake}g.`;
   }
 
   const existingDuel = await env.DB.prepare(
@@ -83,14 +95,20 @@ export async function handleChallenge(env, url) {
 
   if (existingDuel) {
     return new Response(
-      `${targetPlayer.display_name} already has a pending challenge. They must !ready or !run first.`
+      `${targetPlayer.display_name} already has a pending challenge. They must type !ready or !run first.`
     );
   }
 
-  const expiresAt = new Date(Date.now() + 60 * 1000).toISOString();
+  const expiresAt = new Date(Date.now() + 120 * 1000).toISOString();
 
   await env.DB.prepare(
-    `INSERT INTO duels (challenger, target, stake, status, expires_at)
+    `INSERT INTO duels (
+       challenger,
+       target,
+       stake,
+       status,
+       expires_at
+     )
      VALUES (?, ?, ?, 'pending', ?)`
   )
     .bind(challenger, target, stake, expiresAt)
@@ -106,8 +124,12 @@ export async function handleChallenge(env, url) {
     )
     .run();
 
-  return new Response(
-    `⚔️ ${challengerPlayer.display_name} challenged ${targetPlayer.display_name} for ${stake}g!${stakeNote} ${targetPlayer.display_name}, type !ready or !run. If a goblin has no champion, they enter the arena themselves.`
-      .slice(0, 490)
-  );
+  const responseMessage =
+    `⚔️ ${challengerPlayer.display_name} challenged ` +
+    `${targetPlayer.display_name} for ${stake}g!` +
+    `${stakeNote} ` +
+    `${targetPlayer.display_name}, type !ready to fight or !run to flee. ` +
+    `Anyone without a Gobbo must enter the arena personally.`;
+
+  return new Response(responseMessage.slice(0, 490));
 }
