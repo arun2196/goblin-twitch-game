@@ -1,4 +1,3 @@
-import { randomInt } from "../helpers/random.js";
 import {
   cleanUsername,
   cleanDisplayName,
@@ -94,11 +93,36 @@ async function handlePlayerGift(
     );
   }
 
-  // Final 48-hour event:
-  // The Treasury adds a random 10%–50% bonus to every player gift.
-  const bonusPercent = randomInt(10, 50);
-  const bonusAmount = Math.floor(amount * (bonusPercent / 100));
-  const receivedAmount = amount + bonusAmount;
+  /*
+   * The Goblin Treasury takes a small 5% fee.
+   * Since the minimum gift is 5g, every gift pays at least 1g.
+   */
+  const taxRate = 0.05;
+  const taxAmount = Math.max(
+    1,
+    Math.floor(amount * taxRate)
+  );
+
+  const receivedAmount = amount - taxAmount;
+
+  /*
+   * This should never happen with the current 5g minimum,
+   * but it prevents invalid transfers if the rules change.
+   */
+  if (receivedAmount < 1) {
+    return new Response(
+      "That gift is too small after the Goblin Treasury takes its fee."
+    );
+  }
+
+  /*
+   * Gobbo holds the collected treasury tax as normal player gold.
+   */
+  const gobbo = await getOrCreatePlayer(
+    env,
+    "gobbo",
+    "Gobbo"
+  );
 
   await env.DB.batch([
     env.DB.prepare(`
@@ -126,6 +150,18 @@ async function handlePlayerGift(
     ),
 
     env.DB.prepare(`
+      UPDATE players
+      SET gold = gold + ?,
+          total_gold_earned = total_gold_earned + ?,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE username = ?
+    `).bind(
+      taxAmount,
+      taxAmount,
+      gobbo.username
+    ),
+
+    env.DB.prepare(`
       INSERT INTO transactions (
         username,
         amount,
@@ -147,7 +183,7 @@ async function handlePlayerGift(
       VALUES (?, ?, ?)
     `).bind(
       target,
-      amount,
+      receivedAmount,
       "gift_received"
     ),
 
@@ -159,9 +195,9 @@ async function handlePlayerGift(
       )
       VALUES (?, ?, ?)
     `).bind(
-      target,
-      bonusAmount,
-      "gift_treasury_bonus"
+      gobbo.username,
+      taxAmount,
+      "gift_treasury_tax"
     ),
 
     env.DB.prepare(`
@@ -172,24 +208,27 @@ async function handlePlayerGift(
       VALUES (?, ?)
     `).bind(
       "gift",
-      `${giver.display_name} gifted ${amount} gold to ${receiver.display_name}. The treasury added ${bonusAmount}g (${bonusPercent}%), for a total of ${receivedAmount}g.`
+      `${giver.display_name} gifted ${amount} gold to ${receiver.display_name}. ` +
+        `The Goblin Treasury collected ${taxAmount}g, and ${receiver.display_name} received ${receivedAmount}g.`
     ),
   ]);
 
   const giftResponses = [
-    `🎁 ${giver.display_name} gifted ${amount}g to ${receiver.display_name}! The Treasury added a ${bonusPercent}% bonus: +${bonusAmount}g. Total received: ${receivedAmount}g!`,
+    `🎁 ${giver.display_name} gifted ${amount}g to ${receiver.display_name}! The Treasury pocketed ${taxAmount}g, leaving ${receivedAmount}g.`,
 
-    `💰 ${giver.display_name} sent ${amount}g to ${receiver.display_name}, and the Goblin Treasury matched it with an extra ${bonusAmount}g! ${receivedAmount}g received.`,
+    `💰 ${giver.display_name} sent ${amount}g to ${receiver.display_name}. After a tiny ${taxAmount}g Treasury fee, ${receivedAmount}g arrived safely.`,
 
-    `🍀 Gift boosted! ${giver.display_name} gave ${amount}g to ${receiver.display_name}. Treasury blessing: +${bonusPercent}% (${bonusAmount}g). Final gift: ${receivedAmount}g.`,
+    `🏦 Gift processed! ${receiver.display_name} receives ${receivedAmount}g from ${giver.display_name}, while the Treasury quietly keeps ${taxAmount}g.`,
 
-    `🏦 The Treasury is feeling generous! ${giver.display_name}'s ${amount}g gift to ${receiver.display_name} grew by ${bonusAmount}g. Total: ${receivedAmount}g.`,
+    `🪙 ${giver.display_name} gifted ${amount}g to ${receiver.display_name}. Goblin accounting removed ${taxAmount}g for entirely legitimate reasons.`,
 
-    `✨ ${giver.display_name} gifted ${amount}g to ${receiver.display_name}. Goblin accounting somehow added ${bonusAmount}g instead of stealing it. Total: ${receivedAmount}g!`,
+    `📜 The Treasury approves ${giver.display_name}'s gift! ${receiver.display_name} gets ${receivedAmount}g, and Gobbo claims ${taxAmount}g in paperwork fees.`,
   ];
 
   return new Response(
-    giftResponses[randomInt(0, giftResponses.length - 1)]
+    giftResponses[
+      Math.floor(Math.random() * giftResponses.length)
+    ].slice(0, 490)
   );
 }
 

@@ -51,7 +51,7 @@ export default {
   async scheduled(event, env, ctx) {
     console.log("[Cron] Triggered:", event.cron);
 
-    if (event.cron === "0,30 * * * *") {
+    if (event.cron === "0 * * * *") {
       ctx.waitUntil(runDungeonCron(env));
       return;
     }
@@ -79,6 +79,52 @@ export default {
 
         return new Response(
           `D1 Connected! Test value: ${result.ok}`
+        );
+      }
+
+      if (
+        request.method === "GET" &&
+        url.pathname === "/overlay/chest/latest-id"
+      ) {
+        return await getLatestChestOverlayEventId(env);
+      }
+
+      if (
+        request.method === "GET" &&
+        url.pathname === "/overlay/chest/next"
+      ) {
+        return await getNextChestOverlayEvent(
+          env,
+          url
+        );
+      }
+
+      /*
+      * Chest overlay static page for OBS.
+      *
+      * The actual files live inside:
+      * chest-overlay/
+      *   index.html
+      *   style.css
+      *   script.js
+      */
+
+      if (url.pathname === "/chest-overlay") {
+        return Response.redirect(
+          `${url.origin}/chest-overlay/`,
+          302
+        );
+      }
+
+      if (
+        url.pathname.startsWith(
+          "/chest-overlay/"
+        )
+      ) {
+        return await serveChestOverlayAsset(
+          request,
+          env,
+          url
         );
       }
 
@@ -250,6 +296,131 @@ export default {
     }
   },
 };
+
+function chestOverlayJson(
+  data,
+  status = 200
+) {
+  return new Response(
+    JSON.stringify(data),
+    {
+      status,
+      headers: {
+        "Content-Type":
+          "application/json; charset=utf-8",
+
+        "Cache-Control":
+          "no-store, no-cache, must-revalidate",
+
+        "Access-Control-Allow-Origin": "*",
+      },
+    }
+  );
+}
+
+async function getLatestChestOverlayEventId(
+  env
+) {
+  const row = await env.DB.prepare(`
+    SELECT COALESCE(MAX(id), 0) AS id
+    FROM chest_overlay_events
+  `).first();
+
+  return chestOverlayJson({
+    id: Number(row?.id || 0),
+  });
+}
+
+async function getNextChestOverlayEvent(
+  env,
+  url
+) {
+  const rawAfter =
+    url.searchParams.get("after") || "0";
+
+  const after = Number(rawAfter);
+
+  if (
+    !Number.isInteger(after) ||
+    after < 0
+  ) {
+    return chestOverlayJson(
+      {
+        error:
+          "after must be a non-negative integer",
+      },
+      400
+    );
+  }
+
+  const event = await env.DB.prepare(`
+    SELECT
+      id,
+      username,
+      item_key,
+      item_name,
+      image_url,
+      created_at
+    FROM chest_overlay_events
+    WHERE id > ?
+    ORDER BY id ASC
+    LIMIT 1
+  `)
+    .bind(after)
+    .first();
+
+  return chestOverlayJson(
+    event || {}
+  );
+}
+
+/**
+ * Serves files from the chest-overlay folder.
+ *
+ * Public URL:
+ * /chest-overlay/
+ *
+ * Asset binding paths:
+ * /index.html
+ * /style.css
+ * /script.js
+ */
+async function serveChestOverlayAsset(
+  request,
+  env,
+  url
+) {
+  if (!env.ASSETS) {
+    return new Response(
+      "Chest overlay asset binding is missing.",
+      {
+        status: 500,
+      }
+    );
+  }
+
+  let assetPath = url.pathname.slice(
+    "/chest-overlay".length
+  );
+
+  if (
+    !assetPath ||
+    assetPath === "/"
+  ) {
+    assetPath = "/index.html";
+  }
+
+  const assetUrl = new URL(request.url);
+
+  assetUrl.pathname = assetPath;
+
+  return env.ASSETS.fetch(
+    new Request(
+      assetUrl.toString(),
+      request
+    )
+  );
+}
 
 function getGobboPlayerHtml() {
   return `<!DOCTYPE html>
@@ -467,8 +638,8 @@ function getDungeonTimerHtml() {
         (
           dungeonOffset -
           secondsSinceHour +
-          1800
-        ) % 1800;
+          3600
+        ) % 3600;
 
       if (remaining <= 5) {
         timer.classList.add("now");

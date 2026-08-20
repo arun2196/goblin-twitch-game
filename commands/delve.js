@@ -13,6 +13,8 @@ import {
 import { generateCommentary } from "../helpers/commentary.js";
 import { applyStoryNames } from "../helpers/aliases.js";
 
+const DELVE_SACRIFICE_CHANCE = 0.5;
+
 function makeSoloCompanion(player, storyName) {
   return {
     id: null,
@@ -71,6 +73,7 @@ async function enrichCompanion(env, companion) {
 
     // Preserve inventory-specific values.
     id: companion.id,
+    username: companion.username,
     uses_left: companion.uses_left,
     is_player: false,
   };
@@ -82,38 +85,44 @@ function buildFallbackCommentary({
   delve,
   difficulty,
   didFail,
+  wasSacrificed,
   goldChange,
 }) {
   const delveName = delve.delve_name || "an unknown delve";
   const difficultyName = difficulty.name || "Unknown";
-  const goldAmount = Math.abs(goldChange);
 
-  if (companion.is_player) {
-    if (didFail) {
+  if (!didFail) {
+    if (companion.is_player) {
       return (
         `🕳️ ${storyName} enters ${delveName} alone on ${difficultyName} difficulty. ` +
-        `The expedition becomes a hurried retreat, and ${goldAmount}g is lost during the escape.`
+        `Against all reasonable expectations, ${storyName} returns victorious with ${goldChange}g.`
       );
     }
 
     return (
-      `🕳️ ${storyName} enters ${delveName} alone on ${difficultyName} difficulty ` +
-      `and somehow returns victorious with ${goldAmount}g.`
+      `🕳️ ${storyName} and ${companion.item_name} brave ${delveName} on ` +
+      `${difficultyName} difficulty. The expedition succeeds, and they return together with ${goldChange}g.`
     );
   }
 
-  if (didFail) {
+  if (wasSacrificed) {
     return (
-      `🕳️ ${storyName} and ${companion.item_name} enter ${delveName} on ` +
-      `${difficultyName} difficulty. ${companion.item_name} tries to help, ` +
-      `but the expedition falls apart and they retreat after losing ${goldAmount}g.`
+      `🕳️ Disaster strikes in ${delveName}! ${companion.item_name} holds the line, ` +
+      `giving ${storyName} enough time to escape without a scratch. ` +
+      `${storyName} loses no gold—but ${companion.item_name} does not return.`
+    );
+  }
+
+  if (companion.is_player) {
+    return (
+      `🕳️ ${storyName} enters ${delveName} alone on ${difficultyName} difficulty. ` +
+      `The expedition collapses into a frantic retreat, but ${storyName} escapes without losing any gold.`
     );
   }
 
   return (
-    `🕳️ ${storyName} and ${companion.item_name} explore ${delveName} on ` +
-    `${difficultyName} difficulty. ${companion.item_name} proves useful, ` +
-    `and they return with ${goldAmount}g.`
+    `🕳️ ${storyName} and ${companion.item_name} retreat from ${delveName} after the ` +
+    `${difficultyName} expedition goes terribly wrong. Both escape safely, and no gold is lost.`
   );
 }
 
@@ -125,11 +134,7 @@ export async function handleDelve(env, url) {
     return new Response("Usage: !delve");
   }
 
-  const player = await getOrCreatePlayer(
-    env,
-    username,
-    displayName
-  );
+  const player = await getOrCreatePlayer(env, username, displayName);
 
   const playerDisplayName =
     player.display_name ||
@@ -150,8 +155,8 @@ export async function handleDelve(env, url) {
     playerDisplayName;
 
   /*
-   * delve_lore is now the complete source for delve selection
-   * and prompt context.
+   * delve_lore is the complete source for delve selection
+   * and AI prompt context.
    */
   const delve = await env.DB.prepare(
     `SELECT
@@ -187,13 +192,11 @@ export async function handleDelve(env, url) {
     );
   }
 
-  const difficulty = weightedPick(
-    difficulties.results
-  );
+  const difficulty = weightedPick(difficulties.results);
 
   /*
-   * Select one random Gobbo from the player's inventory.
-   * If they have no Gobbo, they enter alone.
+   * Select the companion before resolving the delve.
+   * This exact companion is the only one that can be lost.
    */
   const selectedCompanion =
     (await getRandomInventoryItem(env, username)) ||
@@ -204,9 +207,6 @@ export async function handleDelve(env, url) {
     selectedCompanion
   );
 
-  /*
-   * Existing difficulty and failure mechanics remain unchanged.
-   */
   const failChance = Number(
     difficulty.fail_chance || 0
   );
@@ -214,40 +214,44 @@ export async function handleDelve(env, url) {
   const didFail =
     Math.random() * 100 < failChance;
 
+  /*
+   * A companion can only be sacrificed after a failed delve.
+   * Solo players cannot sacrifice an inventory companion.
+   */
+  const wasSacrificed =
+    didFail &&
+    !companion.is_player &&
+    Boolean(companion.id) &&
+    Math.random() < DELVE_SACRIFICE_CHANCE;
+
+  /*
+   * Failed delves award no gold but also remove no gold.
+   * Successful delve rewards retain the existing 2x modifier.
+   */
   const baseGold = didFail
-    ? -randomInt(5, 20)
+    ? 0
     : randomInt(10, 40);
 
   const goldMultiplier = Number(
     difficulty.gold_multiplier || 1
   );
 
-  const rolledGoldChange = Math.floor(
-    baseGold *
-      goldMultiplier *
-      (didFail ? 1 : 2)
-  );
+  const goldChange = didFail
+    ? 0
+    : Math.floor(
+        baseGold *
+        goldMultiplier *
+        2
+      );
 
   const currentGold = Number(player.gold || 0);
-
-  /*
-   * Failed delves cannot reduce a player below 0 gold.
-   */
-  const goldChange =
-    rolledGoldChange < 0
-      ? -Math.min(
-          currentGold,
-          Math.abs(rolledGoldChange)
-        )
-      : rolledGoldChange;
-
   const newGold = currentGold + goldChange;
 
   const companionLogName = companion.is_player
     ? "no Gobbo companion"
     : companion.item_name;
 
-  await env.DB.batch([
+  const statements = [
     env.DB.prepare(
       `UPDATE players
        SET gold = ?,
@@ -261,22 +265,59 @@ export async function handleDelve(env, url) {
       didFail ? 1 : 0,
       username
     ),
+  ];
 
-    env.DB.prepare(
-      `INSERT INTO transactions (
-         username,
-         amount,
-         reason
-       )
-       VALUES (?, ?, ?)`
-    ).bind(
-      username,
-      goldChange,
-      didFail
-        ? "delve_fail"
-        : "delve_success"
-    ),
+  /*
+   * Only successful delves create a gold transaction.
+   * We avoid filling the transaction table with zero-value failures.
+   */
+  if (goldChange > 0) {
+    statements.push(
+      env.DB.prepare(
+        `INSERT INTO transactions (
+           username,
+           amount,
+           reason
+         )
+         VALUES (?, ?, ?)`
+      ).bind(
+        username,
+        goldChange,
+        "delve_success"
+      )
+    );
+  }
 
+  /*
+   * Permanently remove the exact companion that entered the delve.
+   */
+  if (wasSacrificed) {
+    statements.push(
+      env.DB.prepare(
+        `DELETE FROM inventory
+         WHERE id = ?
+           AND username = ?`
+      ).bind(
+        companion.id,
+        username
+      )
+    );
+  }
+
+  const eventMessage = wasSacrificed
+    ? (
+        `${playerDisplayName} failed ${delve.delve_name} with ` +
+        `${companion.item_name}. ${companion.item_name} sacrificed itself ` +
+        `so ${playerDisplayName} could escape. No gold was lost.`
+      )
+    : (
+        `${playerDisplayName} ${
+          didFail ? "failed" : "completed"
+        } ${delve.delve_name} with ${companionLogName} ` +
+        `on ${difficulty.name} difficulty for ${goldChange}g.`
+      );
+
+  statements.push(
     env.DB.prepare(
       `INSERT INTO events (
          event_type,
@@ -284,16 +325,16 @@ export async function handleDelve(env, url) {
        )
        VALUES (?, ?)`
     ).bind(
-      didFail
-        ? "delve_failure"
-        : "delve_success",
+      wasSacrificed
+        ? "delve_companion_lost"
+        : didFail
+          ? "delve_failure"
+          : "delve_success",
+      eventMessage
+    )
+  );
 
-      `${playerDisplayName} ${
-        didFail ? "failed" : "completed"
-      } ${delve.delve_name} with ${companionLogName} ` +
-        `on ${difficulty.name} difficulty for ${goldChange}g.`
-    ),
-  ]);
+  await env.DB.batch(statements);
 
   const fallback = buildFallbackCommentary({
     storyName,
@@ -301,15 +342,20 @@ export async function handleDelve(env, url) {
     delve,
     difficulty,
     didFail,
+    wasSacrificed,
     goldChange,
   });
 
   let commentary = fallback;
 
   try {
+    const commentaryType = wasSacrificed
+      ? "delve_loss"
+      : "delve";
+
     commentary = await generateCommentary(
       env,
-      "delve",
+      commentaryType,
       {
         player: {
           username,
@@ -321,6 +367,7 @@ export async function handleDelve(env, url) {
         },
 
         companion: {
+          inventoryId: companion.id,
           itemKey: companion.item_key,
           name: companion.item_name,
           type: companion.item_type,
@@ -377,7 +424,6 @@ export async function handleDelve(env, url) {
             difficulty.name || "",
 
           goldMultiplier,
-
           failChance,
         },
 
@@ -386,11 +432,16 @@ export async function handleDelve(env, url) {
           failed: didFail,
 
           goldChange,
-
-          goldAmount:
-            Math.abs(goldChange),
-
+          goldAmount: goldChange,
           newGold,
+
+          companionSacrificed:
+            wasSacrificed,
+
+          sacrificedCompanionName:
+            wasSacrificed
+              ? companion.item_name
+              : "",
         },
       }
     );
