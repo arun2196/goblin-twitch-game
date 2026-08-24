@@ -304,10 +304,11 @@ export async function handleAccept(env, url) {
    * The winner receives the wager plus extra gold thrown by the audience.
    * The loser only loses the original wager.
    */
-  const audienceBonus = Math.min(
-    50,
-    randomInt(5, 10) + Math.floor(stake * 0.5)
-  );
+  const audienceBonus =
+    Math.min(
+      50,
+      randomInt(5, 10) + Math.floor(stake * 0.5)
+    ) * 4;
   const totalReward = stake + audienceBonus;
 
   const brokenItems = [];

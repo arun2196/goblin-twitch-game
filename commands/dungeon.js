@@ -487,12 +487,26 @@ export async function handleDungeon(env, url) {
         .bind(member.username)
         .first();
 
-      const catchUpBonus =
-        Number(player?.gold || 0) < 5000;
+      const playerGold = Number(
+        player?.gold || 0
+      );
 
-      if (catchUpBonus) {
-        amount *= 2;
+      let rewardMultiplier = 4;
+
+      if (playerGold < 5000) {
+        rewardMultiplier = 6;
+      } else if (playerGold < 15000) {
+        rewardMultiplier = 5.5;
+      } else if (playerGold < 30000) {
+        rewardMultiplier = 5;
       }
+
+      amount = Math.floor(
+        amount * rewardMultiplier
+      );
+
+      const catchUpBonus =
+        rewardMultiplier > 4;
 
       const reason = specialEvent
         ? success

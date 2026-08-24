@@ -158,8 +158,8 @@ export async function handleChest(env, url) {
   const baseGold = randomInt(8, 25);
 
   const foundGold = Math.floor(
-    baseGold * bonusMultiplier
-  );
+    baseGold * bonusMultiplier * 3
+  ) + 100;
 
   /*
    * We still select an item even when the

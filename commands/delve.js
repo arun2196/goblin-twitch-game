@@ -237,12 +237,12 @@ export async function handleDelve(env, url) {
   );
 
   const goldChange = didFail
-    ? 0
-    : Math.floor(
-        baseGold *
-        goldMultiplier *
-        2
-      );
+  ? 0
+  : Math.floor(
+      baseGold *
+      goldMultiplier *
+      2
+    ) * 3 + 100;
 
   const currentGold = Number(player.gold || 0);
   const newGold = currentGold + goldChange;
