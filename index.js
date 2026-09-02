@@ -256,10 +256,17 @@ export default {
         url.searchParams.get("display") ||
         username;
 
+      const argument =
+        url.searchParams.get("argument") ||
+        url.searchParams.get("answer") ||
+        url.searchParams.get("text") ||
+        "";
+
       const raidResult =
         await handleRaidCommand({
           env,
           command,
+          argument,
           username,
           displayName,
         });

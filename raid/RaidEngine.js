@@ -1,5 +1,7 @@
-import suspiciousDoor from "./raids/suspicious-door.json";
-
+import season3Finale from "./raids/season-3-finale.json";
+import {
+  getOrCreatePlayer,
+} from "../helpers/players.js";
 import {
   cancelRaidRun,
   claimDueRaidEncounter,
@@ -29,8 +31,8 @@ import {
 
 const RAID_REGISTRY = new Map([
   [
-    suspiciousDoor.key.toLowerCase(),
-    suspiciousDoor,
+    season3Finale.key.toLowerCase(),
+    season3Finale,
   ],
 ]);
 
@@ -51,6 +53,13 @@ function normaliseUsername(value) {
   return String(value ?? "")
     .trim()
     .toLowerCase();
+}
+
+function normaliseAnswer(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, "");
 }
 
 function getRaidDefinition(raidKey) {
@@ -122,7 +131,7 @@ function getJoinWindowMinutes(
 
   if (
     Number.isFinite(configured) &&
-    configured > 0
+    configured >= 0
   ) {
     return configured;
   }
@@ -533,13 +542,39 @@ function validateRaidDefinition(raid) {
         );
       }
 
-      inputKeys.add(input.key);
-      inputCommands.add(command);
-    }
+            inputKeys.add(input.key);
+            inputCommands.add(command);
+          }
 
-    validateEncounterNarration(
-      encounter
-    );
+          if (encounter.type === "free-text") {
+            const acceptedAnswers =
+              encounter.mechanics
+                ?.acceptedAnswers;
+
+            if (
+              !Array.isArray(acceptedAnswers) ||
+              acceptedAnswers.length === 0
+            ) {
+              throw new Error(
+                `Free-text encounter "${encounter.key}" must define mechanics.acceptedAnswers.`
+              );
+            }
+
+            const normalisedAnswers =
+              acceptedAnswers
+                .map(normaliseAnswer)
+                .filter(Boolean);
+
+            if (normalisedAnswers.length === 0) {
+              throw new Error(
+                `Free-text encounter "${encounter.key}" has no usable accepted answers.`
+              );
+            }
+          }
+
+          validateEncounterNarration(
+            encounter
+          );
   }
 
   return true;
@@ -829,6 +864,78 @@ function resolveParticipation(
   };
 }
 
+function resolveFreeText(
+  encounter,
+  entries
+) {
+  const mechanics =
+    encounter.mechanics ?? {};
+
+  const acceptedAnswers =
+    new Set(
+      (mechanics.acceptedAnswers ?? [])
+        .map(normaliseAnswer)
+        .filter(Boolean)
+    );
+
+  const requiredCorrectAnswers =
+    Math.max(
+      1,
+      Number.parseInt(
+        mechanics.requiredCorrectAnswers,
+        10
+      ) || 1
+    );
+
+  const correctEntries =
+    entries.filter((entry) => {
+      const answer =
+        normaliseAnswer(
+          entry.metadata?.answer
+        );
+
+      return (
+        answer &&
+        acceptedAnswers.has(answer)
+      );
+    });
+
+  const success =
+    correctEntries.length >=
+    requiredCorrectAnswers;
+
+  return {
+    outcome:
+      success
+        ? "success"
+        : "failure",
+
+    result: {
+      resolver: "free-text",
+
+      participantCount:
+        entries.length,
+
+      correctCount:
+        correctEntries.length,
+
+      requiredCorrectAnswers,
+
+      correctUsernames:
+        correctEntries.map(
+          (entry) => entry.username
+        ),
+
+      correctDisplayNames:
+        correctEntries.map(
+          (entry) =>
+            entry.display_name ||
+            entry.username
+        ),
+    },
+  };
+}
+
 function resolveEncounter(
   encounter,
   entries,
@@ -850,6 +957,12 @@ function resolveEncounter(
 
     case "participation":
       return resolveParticipation(
+        encounter,
+        entries
+      );
+
+    case "free-text":
+      return resolveFreeText(
         encounter,
         entries
       );
@@ -1240,18 +1353,25 @@ export async function processDueRaidEncounter(
     let resolution;
 
     if (forcedSuccess) {
+      const underlyingResolution =
+        resolveEncounter(
+          encounter,
+          entries,
+          attemptNumber
+        );
+
       resolution = {
         outcome: "success",
 
         result: {
-          resolver:
-            "forced-final-success",
+          ...underlyingResolution.result,
 
           forcedSuccess: true,
-          attemptNumber,
 
-          participantCount:
-            entries.length,
+          originalOutcome:
+            underlyingResolution.outcome,
+
+          attemptNumber,
         },
       };
     } else {
@@ -1287,6 +1407,14 @@ export async function processDueRaidEncounter(
 
         return;
       }
+
+      const rewardResult =
+        await awardRaidEncounterGold(
+          env,
+          encounter,
+          entries,
+          resolution
+        );
 
       const message =
         getAttemptNarration(
@@ -1476,6 +1604,7 @@ export async function processDueRaidEncounter(
 export async function handleRaidCommand({
   env,
   command,
+  argument = "",
   username,
   displayName,
 }) {
@@ -1552,13 +1681,54 @@ export async function handleRaidCommand({
     };
   }
 
-  const safeDisplayName =
-    String(
-      displayName ||
-      cleanUsername
-    ).trim();
+    const safeDisplayName =
+      String(
+        displayName ||
+        cleanUsername
+      ).trim();
 
-  const existing =
+    const isFreeText =
+      context.encounter.type ===
+      "free-text";
+
+    let submittedAnswer = "";
+
+    if (isFreeText) {
+      const rawAnswer =
+        String(argument ?? "").trim();
+
+      if (!rawAnswer) {
+        return {
+          handled: true,
+          ok: false,
+          message:
+            `${safeDisplayName}, use !${cleanCommand} <one-word answer>.`,
+        };
+      }
+
+      if (/\s/.test(rawAnswer)) {
+        return {
+          handled: true,
+          ok: false,
+          message:
+            `${safeDisplayName}, answers must be one word.`,
+        };
+      }
+
+      submittedAnswer =
+        normaliseAnswer(rawAnswer);
+
+      if (!submittedAnswer) {
+        return {
+          handled: true,
+          ok: false,
+          message:
+            `${safeDisplayName}, that answer could not be recorded.`,
+        };
+      }
+    }
+
+    const existing =
     await getRaidEntry(
       env,
       {
@@ -1618,15 +1788,42 @@ export async function handleRaidCommand({
 
       commandUsed:
         cleanCommand,
+
+      metadata:
+        isFreeText
+          ? {
+              answer:
+                submittedAnswer,
+            }
+          : {},
     }
   );
 
+  const previousAnswer =
+    normaliseAnswer(
+      existing?.metadata?.answer
+    );
+
+  const changedAnswer =
+    isFreeText &&
+    existing &&
+    previousAnswer !==
+      submittedAnswer;
+
+  const repeatedAnswer =
+    isFreeText &&
+    existing &&
+    previousAnswer ===
+      submittedAnswer;
+
   const changedChoice =
+    !isFreeText &&
     existing &&
     existing.input_key !==
       input.key;
 
   const repeatedChoice =
+    !isFreeText &&
     existing &&
     existing.input_key ===
       input.key;
@@ -1644,9 +1841,11 @@ export async function handleRaidCommand({
         .attempt_number,
 
     eventType:
+      changedAnswer ||
       changedChoice
         ? "entry_changed"
-        : repeatedChoice
+        : repeatedAnswer ||
+            repeatedChoice
           ? "entry_repeated"
           : "entry_joined",
 
@@ -1663,8 +1862,45 @@ export async function handleRaidCommand({
       previousInputKey:
         existing?.input_key ??
         null,
+
+      answer:
+        isFreeText
+          ? submittedAnswer
+          : null,
+
+      previousAnswer:
+        isFreeText
+          ? previousAnswer || null
+          : null,
     },
   });
+
+  if (isFreeText) {
+    if (changedAnswer) {
+      return {
+        handled: true,
+        ok: true,
+        message:
+          `${safeDisplayName} changed their answer.`,
+      };
+    }
+
+    if (repeatedAnswer) {
+      return {
+        handled: true,
+        ok: true,
+        message:
+          `${safeDisplayName}, your answer is already recorded.`,
+      };
+    }
+
+    return {
+      handled: true,
+      ok: true,
+      message:
+        `${safeDisplayName}'s answer has been recorded.`,
+    };
+  }
 
   if (changedChoice) {
     return {
@@ -2103,4 +2339,185 @@ export async function handleRaidAdmin(
       },
     }
   );
+}
+
+async function awardRaidEncounterGold(
+  env,
+  encounter,
+  entries,
+  resolution
+) {
+  const baseGold =
+    Math.max(
+      0,
+      Number.parseInt(
+        encounter.rewards?.successGold,
+        10
+      ) || 0
+    );
+
+  const correctAnswerBonus =
+    Math.max(
+      0,
+      Number.parseInt(
+        encounter.rewards
+          ?.correctAnswerBonus,
+        10
+      ) || 0
+    );
+
+  /*
+   * Exposition encounters and other
+   * zero-reward encounters stop here.
+   */
+  if (
+    baseGold <= 0 &&
+    correctAnswerBonus <= 0
+  ) {
+    return {
+      rewardedPlayers: 0,
+      totalGoldAwarded: 0,
+      bonusPlayers: 0,
+    };
+  }
+
+  if (!entries.length) {
+    return {
+      rewardedPlayers: 0,
+      totalGoldAwarded: 0,
+      bonusPlayers: 0,
+    };
+  }
+
+  /*
+   * For free-text encounters, this contains
+   * everyone whose FINAL submitted answer
+   * was correct when the window closed.
+   */
+  const correctUsernames =
+    new Set(
+      resolution?.result
+        ?.correctUsernames ?? []
+    );
+
+  /*
+   * Make sure every participant exists
+   * in the normal Gobbo Games player table.
+   *
+   * This also means someone who has only
+   * participated through !raid can still
+   * receive their reward.
+   */
+  for (const entry of entries) {
+    await getOrCreatePlayer(
+      env,
+      entry.username,
+      entry.display_name ||
+        entry.username
+    );
+  }
+
+  const statements = [];
+
+  let rewardedPlayers = 0;
+  let totalGoldAwarded = 0;
+  let bonusPlayers = 0;
+
+  for (const entry of entries) {
+    /*
+     * Each participant gets their own
+     * random Treasury bonus between 5% and 20%.
+     */
+    const treasuryBonusPercent =
+      Math.floor(
+        Math.random() * 16
+      ) + 5;
+
+    const treasuryBonus =
+      baseGold > 0
+        ? Math.ceil(
+            baseGold *
+            (
+              treasuryBonusPercent /
+              100
+            )
+          )
+        : 0;
+
+    let reward =
+      baseGold +
+      treasuryBonus;
+
+    /*
+     * Correct-answer bonus is added AFTER
+     * the random percentage bonus.
+     *
+     * It is not multiplied.
+     */
+    const gotCorrectAnswer =
+      correctAnswerBonus > 0 &&
+      correctUsernames.has(
+        entry.username
+      );
+
+    if (gotCorrectAnswer) {
+      reward +=
+        correctAnswerBonus;
+
+      bonusPlayers += 1;
+    }
+
+    if (reward <= 0) {
+      continue;
+    }
+
+    rewardedPlayers += 1;
+    totalGoldAwarded += reward;
+
+    statements.push(
+      env.DB.prepare(`
+        UPDATE players
+        SET
+          gold = gold + ?,
+          total_gold_earned =
+            total_gold_earned + ?,
+          updated_at =
+            CURRENT_TIMESTAMP
+        WHERE username = ?
+      `).bind(
+        reward,
+        reward,
+        entry.username
+      )
+    );
+
+    statements.push(
+      env.DB.prepare(`
+        INSERT INTO transactions (
+          username,
+          amount,
+          reason
+        )
+        VALUES (?, ?, ?)
+      `).bind(
+        entry.username,
+        reward,
+        gotCorrectAnswer
+          ? "raid_success_answer_bonus"
+          : "raid_success"
+      )
+    );
+  }
+
+  if (statements.length > 0) {
+    await env.DB.batch(
+      statements
+    );
+  }
+
+  return {
+    rewardedPlayers,
+    totalGoldAwarded,
+    bonusPlayers,
+  };
 }

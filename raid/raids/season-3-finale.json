@@ -1,0 +1,446 @@
+{
+  "key": "season-3-finale",
+  "title": "The Search for the Imperial Bonker",
+  "version": 1,
+
+  "settings": {
+    "allowChoiceChanges": true
+  },
+
+  "encounters": [
+    {
+      "key": "expedition-assembles",
+      "title": "The Imperial Expedition",
+      "type": "participation",
+
+      "timing": {
+        "joinMinutes": 10,
+        "maximumAttempts": 1,
+        "forceSuccessOnFinalAttempt": true
+      },
+
+      "inputs": [
+        {
+          "key": "raid",
+          "command": "raid",
+          "label": "Join the Imperial Expedition"
+        }
+      ],
+
+      "mechanics": {
+        "requiredParticipants": 1
+      },
+
+      "rewards": {
+        "successGold": 1500
+      },
+
+      "narration": {
+        "intro": "The Gobbo Games are almost over. A champion stands victorious, the crown awaits, and the Gobbo Empire gathers for the coronation. But as the ancient rites begin, disaster! The Imperial Bonker is missing. By ancient Gobbo law, no Emperor may be crowned without wielding the sacred relic. The Bonker was lost 114 years ago, when the ship carrying it vanished somewhere in the Great Gobbo Sea. The coronation cannot continue. There is only one thing to do: find the Bonker.",
+
+        "join": "Ships are being prepared, supplies are being stolen from the royal pantry, and an Imperial Expedition is forming. Gobbos willing to sail into the unknown have 10 minutes to use !raid.",
+
+        "attempts": {
+          "1": {
+            "success": "The call is answered. Gobbos pour aboard from across the Empire. Barrels are loaded, maps are unrolled, and several Gobbos confidently point at completely different parts of the ocean. With the future Emperor aboard and the last known location of the Bonker marked on the map, the expedition raises anchor. The Search for the Imperial Bonker has begun."
+          }
+        }
+      }
+    },
+
+    {
+      "key": "trouble-at-sea",
+      "title": "Trouble at Sea",
+      "type": "group-roll",
+
+      "timing": {
+        "joinMinutes": 10,
+        "maximumAttempts": 3,
+        "forceSuccessOnFinalAttempt": true
+      },
+
+      "inputs": [
+        {
+          "key": "raid",
+          "command": "raid",
+          "label": "Defend the Expedition"
+        }
+      ],
+
+      "mechanics": {
+        "playerSides": 10,
+        "enemySides": 10,
+        "enemyDiceOffset": 0,
+        "flatPlayerBonus": 0,
+        "flatEnemyBonus": 1000,
+        "retryPlayerBonus": 2,
+        "tiesWin": true
+      },
+
+      "rewards": {
+        "successGold": 2000
+      },
+
+      "narration": {
+        "intro": "Hours into the voyage, a sleek vessel appears on the horizon and rapidly closes the distance. It is faster than any Gobbo ship has a reasonable right to be. Signal flags rise from its mast with a simple warning: TURN BACK. No demand for gold. No demand for surrender. Just a warning to abandon the search for the Imperial Bonker. The Gobbos respond by preparing the cannons.",
+
+        "join": "Battle stations! The expedition needs every available Gobbo. Use !raid within 10 minutes to join the defense.",
+
+        "retries": {
+          "2": "The cannons cannot keep up with that ship. Fine. If the Gobbos cannot sink it, they will slow it down. The Gobbo Sharpshooters scramble into the rigging with orders to target the enemy sails. Everyone already fighting remains in the battle. Reinforcements have 1 minute to use !raid.",
+
+          "3": "Their sails are ruined. Their speed is gone. And their ship is now close enough to touch. Grappling hooks are dragged onto the deck as the order goes out: PREPARE TO BOARD! Every Gobbo already in the fight is coming with us. Reinforcements have 1 minute to use !raid."
+        },
+
+        "attempts": {
+          "1": {
+            "failure": "The Imperial cannons roar across the sea. Cannonballs hammer the water, the enemy hull, and in one unfortunate case something that may have been our own railing. Several shots connect, but the strange vessel is simply too fast. It sweeps past the Gobbo firing arc before the cannons can finish reloading. The ship survives, circles around, and comes straight back."
+          },
+
+          "2": {
+            "failure": "The Gobbo Sharpshooters open fire. They ignore the hull and aim for ropes, rigging and sails. The volley lands beautifully. Canvas tears apart, lines snap, and the enemy's great sails collapse into a tangled mess. The ship is still fighting, but its incredible speed is gone. For the first time, the Imperial vessel begins gaining on it."
+          },
+
+          "3": {
+            "success": "The Gobbo ship surges alongside the crippled vessel. Grappling hooks fly. Ropes tighten. Gobbos pour across the gap in a boarding charge of questionable organization and extraordinary enthusiasm. One jumps too early. Another boards through a window. Somehow it works. After a furious fight across the deck, the defenders finally surrender. Searching the captured ship reveals something unsettling: sealed orders bearing the expedition's destination. DO NOT ALLOW THEM TO REACH THE COORDINATES. These were not pirates hunting treasure. Someone knew exactly where the Gobbos were going, and desperately wanted them to turn back."
+          }
+        },
+
+        "success": "The captured vessel is left behind as the Imperial Expedition resumes its course. Ahead lie the last known coordinates of the Imperial Bonker, and now a far more troubling question: what exactly is waiting there?"
+      }
+    },
+
+    {
+      "key": "water-seagulls",
+      "title": "The Water Seagulls",
+      "type": "majority-choice",
+
+      "timing": {
+        "joinMinutes": 5,
+        "maximumAttempts": 1,
+        "forceSuccessOnFinalAttempt": true
+      },
+
+      "inputs": [
+        {
+          "key": "fight",
+          "command": "rally",
+          "label": "Fight the Water Seagulls"
+        },
+        {
+          "key": "feed",
+          "command": "feed",
+          "label": "Feed the Water Seagulls"
+        }
+      ],
+
+      "mechanics": {},
+
+      "rewards": {
+        "successGold": 1000
+      },
+
+      "narration": {
+        "intro": "At last, the expedition reaches the coordinates where the Imperial Bonker vanished 114 years ago. The sea is unnaturally still. No wreckage. No debris. Not even a broken plank. Then the water erupts. A flock of Water Seagulls bursts from beneath the surface and descends upon the ship with the confidence of creatures that have done this before.",
+
+        "inputsOpen": "The Gobbos must decide quickly. Use !rally to fight the Water Seagulls, or !feed to throw the expedition's supplies at them. Voting remains open for 10 minute.",
+
+        "attempts": {
+          "1": {
+            "success": "The Gobbos reach a decision, and the Water Seagull crisis is resolved by either violence or an irresponsible amount of food. The waters finally calm. With the immediate threat gone, attention returns to the coordinates below. Something is wrong. If the Imperial Bonker sank here, where is the wreck?"
+          }
+        }
+      }
+    },
+
+    {
+      "key": "descent",
+      "title": "Into the Depths",
+      "type": "participation",
+
+      "timing": {
+        "joinMinutes": 0,
+        "maximumAttempts": 1,
+        "forceSuccessOnFinalAttempt": true
+      },
+
+      "inputs": [],
+
+      "mechanics": {
+        "requiredParticipants": 0
+      },
+
+      "rewards": {
+        "successGold": 0
+      },
+
+      "narration": {
+        "intro": "With the Water Seagulls finally dealt with, the Gobbos turn their attention to the coordinates below. Something is wrong. There is no wreckage. No debris. Nothing to suggest that ane has brough ship carrying the Imperial Bonker ever sank here 114 years ago. If the answer is not on the surface, then the expedition will have to go down. Imperial submarines are brought onto the deck. One has pedals. One appears to be a reinforced barrel. One has somehow been assembled backwards. Someot a modified bathtub and refuses to explain further.",
+
+        "attempts": {
+          "1": {
+            "success": "Against every prediction made by anyone familiar with Gobbo engineering, the expedition reaches the ocean floor. There is still no wreck. Instead, the submarine lamps reveal an ancient stone road disappearing into the darkness. The road is far older than the Imperial Bonker's disappearance. The Gobbos follow it past ruined structures, broken statues and faded Imperial markings until an enormous sealed doorway emerges from the darkness ahead."
+          }
+        }
+      }
+    },
+
+    {
+      "key": "ancient-riddle-1",
+      "title": "The First Seal",
+      "type": "free-text",
+
+      "timing": {
+        "joinMinutes": 5,
+        "maximumAttempts": 2,
+        "forceSuccessOnFinalAttempt": true
+      },
+
+      "inputs": [
+        {
+          "key": "answer",
+          "command": "answer",
+          "label": "Answer the Riddle"
+        }
+      ],
+
+      "mechanics": {
+        "acceptedAnswers": [
+          "name",
+          "names"
+        ],
+        "requiredCorrectAnswers": 1
+      },
+
+      "rewards": {
+        "successGold": 2000,
+        "correctAnswerBonus": 50
+      },
+
+      "narration": {
+        "intro": "The expedition reaches the enormous sealed doorway. Three circular locks are carved into the stone, each covered in ancient Gobbo writing. As the Gobbos approach, the first seal begins to glow. A riddle appears: I belong to you, yet other Gobbos use me more than you do. What am I?",
+
+        "inputsOpen": "The first seal awaits an answer. Use !answer <one-word answer>. You may change your answer until the window closes.",
+
+        "retry": "The first seal remains locked. The inscription glows again. Gobbos have another minute to submit or change their answer with !answer <one-word answer>.",
+
+        "attempts": {
+          "1": {
+            "failure": "The Gobbos shout their answers at the door. The first seal flickers, considers their collective wisdom, and remains stubbornly locked."
+          },
+
+          "2": {
+            "success": "At last, the answer is revealed: NAME. The first seal rotates with a heavy stone click. One lock is open. Two remain."
+          }
+        },
+
+        "success": "The first seal opens. Two ancient locks still bar the way."
+      }
+    },
+
+    {
+      "key": "ancient-riddle-2",
+      "title": "The Second Seal",
+      "type": "free-text",
+
+      "timing": {
+        "joinMinutes": 5,
+        "maximumAttempts": 2,
+        "forceSuccessOnFinalAttempt": true
+      },
+
+      "inputs": [
+        {
+          "key": "answer",
+          "command": "answer",
+          "label": "Answer the Riddle"
+        }
+      ],
+
+      "mechanics": {
+        "acceptedAnswers": [
+          "shadow",
+          "shadows"
+        ],
+        "requiredCorrectAnswers": 1
+      },
+
+      "rewards": {
+        "successGold": 2000,
+        "correctAnswerBonus": 50
+      },
+
+      "narration": {
+        "intro": "The first seal falls silent, but the great door does not move. Instead, the second circle begins to glow. New words burn across the ancient stone: I follow you by day, but flee when darkness comes. I copy every step, yet make no sound. What am I?",
+
+        "inputsOpen": "The second seal awaits an answer. Use !answer <one-word answer>. Answers may be changed until the window closes.",
+
+        "retry": "The second seal refuses to move. The glowing words appear once more. Gobbos have another minute to answer using !answer <one-word answer>.",
+
+        "attempts": {
+          "1": {
+            "failure": "Answers echo through the ruins. The second seal shudders as though considering them, then settles back into place. Apparently ancient Gobbo doors are very particular."
+          },
+
+          "2": {
+            "success": "The answer is revealed: SHADOW. The second seal turns. Ancient gears groan somewhere deep inside the doorway and another lock crashes into place. Two seals are open. Only one remains."
+          }
+        },
+
+        "success": "The second seal opens. Only the final lock remains."
+      }
+    },
+
+    {
+      "key": "ancient-riddle-3",
+      "title": "The Final Seal",
+      "type": "free-text",
+
+      "timing": {
+        "joinMinutes": 5,
+        "maximumAttempts": 2,
+        "forceSuccessOnFinalAttempt": true
+      },
+
+      "inputs": [
+        {
+          "key": "answer",
+          "command": "answer",
+          "label": "Answer the Riddle"
+        }
+      ],
+
+      "mechanics": {
+        "acceptedAnswers": [
+          "silence",
+          "quiet"
+        ],
+        "requiredCorrectAnswers": 1
+      },
+
+      "rewards": {
+        "successGold": 3500,
+        "correctAnswerBonus": 75
+      },
+
+        "intro": "Two seals stand open. The final circle awakens, brighter than the others. The expedition braces itself for another ancient puzzle. Instead, only seven words appear upon the stone: Speak my name and I disappear. What am I?",
+
+        "inputsOpen": "This is the final seal. Use !answer <one-word answer>. Answers may be changed until the window closes.",
+
+        "retry": "Nothing moves. The final seal continues to glow, waiting. Gobbos have one last chance to answer using !answer <one-word answer>.",
+
+        "attempts": {
+          "1": {
+            "failure": "The Gobbos shout increasingly creative answers at the ancient door. None work. For a puzzle about something that disappears when spoken, the expedition is becoming remarkably loud."
+          },
+
+          "2": {
+            "success": "The answer is revealed: SILENCE. For one brief and historically unprecedented moment, the Gobbos fall completely quiet. The final seal turns. A thunderous crack rolls through the ruins as all three locks release."
+          }
+        },
+
+        "success": "The enormous stone doors slowly grind apart. Beyond them lies a passage untouched for generations, descending deeper beneath the ocean floor. Somewhere beyond that darkness waits the truth about the Imperial Bonker."
+      }
+    },
+
+    {
+      "key": "final-guardian",
+      "title": "The Final Guardian",
+      "type": "group-roll",
+
+      "timing": {
+        "joinMinutes": 10,
+        "maximumAttempts": 4,
+        "forceSuccessOnFinalAttempt": true
+      },
+
+      "inputs": [
+        {
+          "key": "raid",
+          "command": "raid",
+          "label": "Fight the Guardian"
+        }
+      ],
+
+      "mechanics": {
+        "playerSides": 10,
+        "enemySides": 10,
+        "enemyDiceOffset": 20,
+        "flatPlayerBonus": 0,
+        "flatEnemyBonus": 1000,
+        "retryPlayerBonus": 3,
+        "tiesWin": true
+      },
+
+      "rewards": {
+        "successGold": 5000
+      },
+
+      "narration": {
+        "intro": "The expedition enters the deepest chamber of the vault. At its far end, resting upon an ancient pedestal, is something unmistakable. The Imperial Bonker. After 114 years, the lost relic is finally within reach. A Gobbo takes one step toward it. The entire chamber begins to shake. Stone plates split apart, ancient gears turn, and an enormous armored Gobbo construct rises from beneath the floor. Its eyes ignite. Apparently the last Emperor did not intend to leave the Bonker unattended.",
+
+        "join": "The Final Guardian blocks the path to the Imperial Bonker. Every Gobbo still standing is called to battle. Use !raid within 1 minute to join the assault.",
+
+        "retries": {
+          "2": "The Guardian barely moved. That is unacceptable. More Gobbos are called forward, larger weapons are brought out, and somebody has found a lever they have been specifically told not to pull. Reinforcements have 1 minute to use !raid.",
+
+          "3": "The Guardian is damaged, but still standing. Fine. The expedition abandons tactics in favor of overwhelming Gobbo ingenuity. Ropes, explosives, loose masonry and at least one piece of submarine equipment are dragged into the chamber. Reinforcements have 1 minute to use !raid.",
+
+          "4": "The Guardian staggers, ancient armor breaking apart, but refuses to fall. Behind it, the Imperial Bonker waits. There will be no retreat. Every remaining Gobbo is ordered forward for one final assault. Reinforcements have 1 minute to use !raid. THIS ENDS NOW."
+        },
+
+        "attempts": {
+          "1": {
+            "failure": "The Gobbos charge. The Guardian responds with the efficiency of a machine specifically constructed to stop Gobbos from doing exactly this. The front line is scattered, weapons bounce harmlessly from ancient armor, and several extremely confident attackers return considerably less confident. The expedition falls back. The Guardian has barely moved."
+          },
+
+          "2": {
+            "failure": "The second assault begins with more Gobbos, heavier weapons and significantly less respect for the architecture. This time the Guardian gives ground. A section of its armor cracks and one enormous stone fist breaks away. For a moment, victory seems close. Then the construct tears a pillar from the floor and apparently decides it has a new weapon. The Gobbos retreat again."
+          },
+
+          "3": {
+            "failure": "There is no longer anything resembling a battle plan. Ropes tighten around the Guardian's limbs. Explosives shake the chamber. Someone drops masonry from above. Someone else arrives carrying equipment that definitely belonged to a submarine. It works. The Guardian crashes to one knee. Its armor is shattered, its mechanisms exposed, and half the chamber is now rubble. Then its eyes ignite once more. Slowly, impossibly, it begins to stand."
+          },
+
+          "4": {
+            "success": "The entire expedition charges. No formations. No clever tactics. Just every Gobbo who made it across the sea, through the ruins and into this impossible vault. The Guardian meets them one final time. Ancient gears scream. Armor breaks. The chamber shakes. Then, with one final thunderous crash, the construct collapses and does not rise again. Silence settles over the ruins. Beyond the wreckage, untouched upon its pedestal, rests the Imperial Bonker."
+          }
+        },
+
+        "success": "After 114 years beneath the ocean, the path to the Imperial Bonker is finally clear. The expedition has done what generations of Gobbos could not. The relic can return home."
+      }
+    },
+
+    {
+      "key": "hail-the-emperor",
+      "title": "Hail the Emperor",
+      "type": "participation",
+
+      "timing": {
+        "joinMinutes": 0,
+        "maximumAttempts": 1,
+        "forceSuccessOnFinalAttempt": true
+      },
+
+      "inputs": [],
+
+      "mechanics": {
+        "requiredParticipants": 0
+      },
+
+      "rewards": {
+        "successGold": 0
+      },
+
+      "narration": {
+        "intro": "With the Guardian defeated, the Gobbos approach the pedestal. After 114 years beneath the ocean, the Imperial Bonker stands before them. The future Emperor reaches for the relic... and it refuses to move. An inscription awakens upon the pedestal: ONLY THE EMPEROR MAY WIELD THE IMPERIAL BONKER. After crossing an ocean, fighting through an ancient vault and destroying its Guardian, the expedition has encountered a 114-year-old constitutional problem.",
+
+        "attempts": {
+          "1": {
+            "success": "More ancient words appear beneath the first inscription. The Bonker does not choose the Emperor. The Gobbos already have. The champion of Gobbo Games Season 3 steps forward once more. This time, the Imperial Bonker releases. For the first time in 114 years, the ancient relic is raised from its pedestal. The succession is complete. The Gobbos return home, the waiting crown is brought forth, and before the assembled Gobbo Empire, the winner of Gobbo Games Season 3 is crowned GOBBO EMPEROR. Long live the Emperor."
+          }
+        }
+      }
+    }
+  ]
+}
