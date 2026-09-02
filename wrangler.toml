@@ -1,11 +1,11 @@
-name = "gobbo-king-s3"
+name = "gobbo-king-s2"
 main = "index.js"
 compatibility_date = "2026-06-12"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "goblin_rpg_s3"
-database_id = "e39c0e15-df3d-48d8-9038-1112a472189c"
+database_name = "goblin_rpg_s4"
+database_id = "8792d45a-9204-450b-b541-9bea8a40cb56"
 
 [triggers]
 crons = [
