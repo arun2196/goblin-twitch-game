@@ -1,13 +1,52 @@
-import { buildDungeonParty } from "../helpers/dungeonPartyBuilder.js";
-import { getRandomDungeonEncounter } from "../helpers/dungeonData.js";
-import { getRandomInventoryItem, randomInt } from "../helpers/random.js";
-import { generateCommentary } from "../helpers/commentary.js";
-import { sendTwitchChatMessage } from "../helpers/twitchChat.js";
-import { getRandomDungeonSpecialEvent } from "../helpers/dungeonSpecialEvents.js";
-import { applyStoryNames } from "../helpers/aliases.js";
+import {
+  buildDungeonParty,
+} from "../helpers/dungeonPartyBuilder.js";
 
-async function ensurePlayer(env, member) {
-  if (!member?.username) return;
+import {
+  getRandomDungeonEncounter,
+} from "../helpers/dungeonData.js";
+
+import {
+  getRandomInventoryItem,
+  randomInt,
+} from "../helpers/random.js";
+
+import {
+  generateCommentary,
+} from "../helpers/commentary.js";
+
+import {
+  sendTwitchChatMessage,
+} from "../helpers/twitchChat.js";
+
+import {
+  getRandomDungeonSpecialEvent,
+} from "../helpers/dungeonSpecialEvents.js";
+
+import {
+  applyStoryNames,
+} from "../helpers/aliases.js";
+
+import {
+  maybeAwardSuperKey,
+  maybeAwardEssence,
+  getDungeonPetEffects,
+} from "../helpers/petRewards.js";
+
+
+/*
+ * ============================================================
+ * PLAYER
+ * ============================================================
+ */
+
+async function ensurePlayer(
+  env,
+  member
+) {
+  if (!member?.username) {
+    return;
+  }
 
   await env.DB.prepare(`
     INSERT OR IGNORE INTO players (
@@ -17,13 +56,22 @@ async function ensurePlayer(env, member) {
       created_at,
       updated_at
     )
-    VALUES (?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    VALUES (
+      ?,
+      ?,
+      0,
+      CURRENT_TIMESTAMP,
+      CURRENT_TIMESTAMP
+    )
   `)
     .bind(
       member.username,
-      member.displayName || member.display_name || member.username
+      member.displayName ||
+        member.display_name ||
+        member.username
     )
     .run();
+
 
   await env.DB.prepare(`
     UPDATE players
@@ -32,18 +80,36 @@ async function ensurePlayer(env, member) {
     WHERE username = ?
   `)
     .bind(
-      member.displayName || member.display_name || member.username,
+      member.displayName ||
+        member.display_name ||
+        member.username,
+
       member.username
     )
     .run();
 }
 
-function getItemPower(item) {
-  if (!item) return 1;
 
-  if (item.power !== null && item.power !== undefined) {
-    return Number(item.power) || 1;
+/*
+ * ============================================================
+ * ITEM POWER
+ * ============================================================
+ */
+
+function getItemPower(item) {
+  if (!item) {
+    return 1;
   }
+
+  if (
+    item.power !== null &&
+    item.power !== undefined
+  ) {
+    return (
+      Number(item.power) || 1
+    );
+  }
+
 
   const rarityPower = {
     desperate: 1,
@@ -54,26 +120,73 @@ function getItemPower(item) {
     legendary: 5,
   };
 
-  return rarityPower[String(item.rarity || "").toLowerCase()] || 1;
+
+  return (
+    rarityPower[
+      String(
+        item.rarity || ""
+      ).toLowerCase()
+    ] || 1
+  );
 }
 
-function makePersonalChampion(member) {
+
+/*
+ * ============================================================
+ * PERSONAL CHAMPION
+ * ============================================================
+ */
+
+function makePersonalChampion(
+  member
+) {
   return {
     id: null,
-    item_name: member.storyName || member.displayName || member.username,
+
+    item_name:
+      member.storyName ||
+      member.displayName ||
+      member.username,
+
     item_type: "Mortal",
+
     rarity: "desperate",
+
     power: 1,
+
     uses_left: null,
+
     is_player: true,
-    description: "No champion was available, so the goblin entered personally.",
+
+    description:
+      "No champion was available, so the goblin entered personally.",
   };
 }
 
-async function damageItem(env, item, brokenItems) {
-  if (!item || item.is_player || !item.id) return;
 
-  const newUses = Number(item.uses_left) - 1;
+/*
+ * ============================================================
+ * ITEM DAMAGE
+ * ============================================================
+ */
+
+async function damageItem(
+  env,
+  item,
+  brokenItems
+) {
+  if (
+    !item ||
+    item.is_player ||
+    !item.id
+  ) {
+    return;
+  }
+
+
+  const newUses =
+    Number(item.uses_left) - 1;
+
 
   if (newUses <= 0) {
     await env.DB.prepare(`
@@ -83,41 +196,91 @@ async function damageItem(env, item, brokenItems) {
       .bind(item.id)
       .run();
 
-    brokenItems.push(item.item_name);
+    brokenItems.push(
+      item.item_name
+    );
+
     return;
   }
+
 
   await env.DB.prepare(`
     UPDATE inventory
     SET uses_left = ?
     WHERE id = ?
   `)
-    .bind(newUses, item.id)
+    .bind(
+      newUses,
+      item.id
+    )
     .run();
 }
 
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
+
+/*
+ * ============================================================
+ * MATH
+ * ============================================================
+ */
+
+function clamp(
+  value,
+  min,
+  max
+) {
+  return Math.max(
+    min,
+    Math.min(
+      max,
+      value
+    )
+  );
 }
 
-function calculateSuccessChance({ party, playerItems, encounter }) {
+
+/*
+ * ============================================================
+ * SUCCESS CHANCE
+ * ============================================================
+ */
+
+function calculateSuccessChance({
+  party,
+  playerItems,
+  encounter,
+}) {
   let chance = 75;
 
-  const realTank = party.members.some(
-    (member) => member.type === "player" && member.role === "tank"
-  );
 
-  const realHealer = party.members.some(
-    (member) => member.type === "player" && member.role === "healer"
-  );
+  const realTank =
+    party.members.some(
+      (member) =>
+        member.type === "player" &&
+        member.role === "tank"
+    );
 
-  const realPlayers = party.members.filter(
-    (member) => member.type === "player"
-  );
 
-  const heroes = party.members.filter(
-    (member) => member.type === "hero"
-  );
+  const realHealer =
+    party.members.some(
+      (member) =>
+        member.type === "player" &&
+        member.role === "healer"
+    );
+
+
+  const realPlayers =
+    party.members.filter(
+      (member) =>
+        member.type === "player"
+    );
+
+
+  const heroes =
+    party.members.filter(
+      (member) =>
+        member.type === "hero"
+    );
+
 
   if (realTank) {
     chance += 5;
@@ -125,29 +288,71 @@ function calculateSuccessChance({ party, playerItems, encounter }) {
     chance -= 5;
   }
 
+
   if (realHealer) {
     chance += 5;
   } else {
     chance -= 5;
   }
 
-  chance += realPlayers.length * 2;
+
+  chance +=
+    realPlayers.length * 2;
+
 
   chance += heroes.reduce(
-    (sum, hero) => sum + Number(hero.powerBonus || 0),
+    (
+      sum,
+      hero
+    ) =>
+      sum +
+      Number(
+        hero.powerBonus || 0
+      ),
+
     0
   );
 
-  const totalItemPower = playerItems.reduce(
-    (sum, row) => sum + getItemPower(row.item),
-    0
-  );
+
+  const totalItemPower =
+    playerItems.reduce(
+      (
+        sum,
+        row
+      ) =>
+        sum +
+        getItemPower(
+          row.item
+        ),
+
+      0
+    );
+
 
   chance += totalItemPower;
-  chance -= Math.floor(Number(encounter.minimum_level || 10) / 10);
 
-  return clamp(chance, 20, 95);
+
+  chance -= Math.floor(
+    Number(
+      encounter.minimum_level ||
+        10
+    ) / 10
+  );
+
+
+  return clamp(
+    chance,
+    20,
+    95
+  );
 }
+
+
+/*
+ * ============================================================
+ * PLAYER REWARD
+ * ============================================================
+ */
 
 async function rewardPlayer(
   env,
@@ -165,20 +370,36 @@ async function rewardPlayer(
         created_at,
         updated_at
       )
-      VALUES (?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-    `).bind(username, displayName || username),
+      VALUES (
+        ?,
+        ?,
+        0,
+        CURRENT_TIMESTAMP,
+        CURRENT_TIMESTAMP
+      )
+    `).bind(
+      username,
+      displayName || username
+    ),
+
 
     env.DB.prepare(`
       UPDATE players
       SET gold = gold + ?,
-          display_name = COALESCE(?, display_name),
-          updated_at = CURRENT_TIMESTAMP
+          display_name =
+            COALESCE(
+              ?,
+              display_name
+            ),
+          updated_at =
+            CURRENT_TIMESTAMP
       WHERE username = ?
     `).bind(
       amount,
       displayName || username,
       username
     ),
+
 
     env.DB.prepare(`
       INSERT INTO transactions (
@@ -195,25 +416,55 @@ async function rewardPlayer(
   ]);
 }
 
+
+/*
+ * ============================================================
+ * JSON
+ * ============================================================
+ */
+
 function safeJson(value) {
   try {
-    return JSON.stringify(value ?? null);
+    return JSON.stringify(
+      value ?? null
+    );
   } catch {
     return JSON.stringify({
-      error: "JSON stringify failed",
+      error:
+        "JSON stringify failed",
     });
   }
 }
 
-async function getQueueSnapshot(env) {
-  const result = await env.DB.prepare(`
-    SELECT *
-    FROM dungeon_queue
-    ORDER BY id ASC
-  `).all();
 
-  return result.results || [];
+/*
+ * ============================================================
+ * QUEUE
+ * ============================================================
+ */
+
+async function getQueueSnapshot(
+  env
+) {
+  const result =
+    await env.DB.prepare(`
+      SELECT *
+      FROM dungeon_queue
+      ORDER BY id ASC
+    `).all();
+
+
+  return (
+    result.results || []
+  );
 }
+
+
+/*
+ * ============================================================
+ * DUNGEON RUN LOGGING
+ * ============================================================
+ */
 
 async function createDungeonRun(
   env,
@@ -226,29 +477,55 @@ async function createDungeonRun(
       status,
       queue_snapshot_json
     )
-    VALUES (?, 'started', ?)
+    VALUES (
+      ?,
+      'started',
+      ?
+    )
   `)
     .bind(
       runId,
-      safeJson(queueSnapshot)
+      safeJson(
+        queueSnapshot
+      )
     )
     .run();
 }
+
 
 async function updateDungeonRun(
   env,
   runId,
   fields
 ) {
-  const entries = Object.entries(fields);
+  const entries =
+    Object.entries(fields);
 
-  if (!entries.length) return;
 
-  const setSql = entries
-    .map(([key]) => `${key} = ?`)
-    .join(", ");
+  if (!entries.length) {
+    return;
+  }
 
-  const values = entries.map(([, value]) => value);
+
+  const setSql =
+    entries
+      .map(
+        ([key]) =>
+          `${key} = ?`
+      )
+      .join(", ");
+
+
+  const values =
+    entries.map(
+      (
+        [
+          ,
+          value,
+        ]
+      ) => value
+    );
+
 
   await env.DB.prepare(`
     UPDATE dungeon_runs
@@ -261,6 +538,7 @@ async function updateDungeonRun(
     )
     .run();
 }
+
 
 async function logDungeonMember(
   env,
@@ -281,51 +559,131 @@ async function logDungeonMember(
       item_id,
       item_power
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (
+      ?,
+      ?,
+      ?,
+      ?,
+      ?,
+      ?,
+      ?,
+      ?,
+      ?,
+      ?,
+      ?
+    )
   `)
     .bind(
       runId,
+
       row.queueId ?? null,
+
       row.username ?? null,
+
       row.displayName ?? null,
+
       row.storyName ?? null,
+
       row.role ?? null,
-      row.selected ? 1 : 0,
+
+      row.selected
+        ? 1
+        : 0,
+
       row.rewardAmount ?? 0,
+
       row.itemName ?? null,
+
       row.itemId ?? null,
+
       row.itemPower ?? null
     )
     .run();
 }
 
-export async function handleDungeon(env, url) {
-  const runId = crypto.randomUUID();
+
+/*
+ * ============================================================
+ * EMPTY PET EFFECT
+ * ============================================================
+ *
+ * Used if petRewards fails for some reason.
+ * A pet lookup should never break an entire dungeon.
+ */
+
+function getEmptyDungeonPetEffects() {
+  return {
+    dungeonGoldBonusPercent: 0,
+
+    realityBenderLevel: 0,
+
+    realitySuccessPenalty: 0,
+
+    realityBreakBonus: 0,
+  };
+}
+
+
+/*
+ * ============================================================
+ * DUNGEON
+ * ============================================================
+ */
+
+export async function handleDungeon(
+  env,
+  url
+) {
+  const runId =
+    crypto.randomUUID();
+
   let runCreated = false;
+
 
   console.log(
     `[Dungeon Cron] Starting scheduled dungeon. Run: ${runId}`
   );
 
+
   try {
-    const queueSnapshot = await getQueueSnapshot(env);
-    const party = await buildDungeonParty(env);
+    /*
+     * ========================================================
+     * PARTY
+     * ========================================================
+     */
+
+    const queueSnapshot =
+      await getQueueSnapshot(
+        env
+      );
+
+
+    const party =
+      await buildDungeonParty(
+        env
+      );
+
 
     const hasRealPlayers =
       party?.members?.some(
-        (member) => member.type === "player"
+        (member) =>
+          member.type ===
+          "player"
       ) || false;
 
+
     /*
-     * Do not create a dungeon_runs record when nobody participated.
-     *
-     * This also prevents a heroes-only party from being logged as
-     * a legitimate dungeon run.
+     * Do not create a dungeon run
+     * when nobody actually queued.
      */
     if (!hasRealPlayers) {
-      console.log("[Dungeon Cron] No queued players.");
+      console.log(
+        "[Dungeon Cron] No queued players."
+      );
+
       return new Response("");
     }
+
 
     await createDungeonRun(
       env,
@@ -333,123 +691,414 @@ export async function handleDungeon(env, url) {
       queueSnapshot
     );
 
+
     runCreated = true;
 
-    await updateDungeonRun(env, runId, {
-      party_json: safeJson(party),
-      selected_queue_ids_json: safeJson(
-        party.playerQueueIds || []
-      ),
-    });
+
+    await updateDungeonRun(
+      env,
+      runId,
+      {
+        party_json:
+          safeJson(party),
+
+        selected_queue_ids_json:
+          safeJson(
+            party.playerQueueIds ||
+              []
+          ),
+      }
+    );
+
+
+    /*
+     * ========================================================
+     * ENCOUNTER
+     * ========================================================
+     */
 
     const encounter =
-      await getRandomDungeonEncounter(env);
+      await getRandomDungeonEncounter(
+        env
+      );
+
 
     if (!encounter) {
-      await updateDungeonRun(env, runId, {
-        status: "failed",
-        finished_at: new Date().toISOString(),
-        error: "No dungeon encounter found.",
-      });
+      await updateDungeonRun(
+        env,
+        runId,
+        {
+          status: "failed",
+
+          finished_at:
+            new Date()
+              .toISOString(),
+
+          error:
+            "No dungeon encounter found.",
+        }
+      );
+
 
       return new Response(
         "No dungeon encounter found."
       );
     }
 
-    let realPlayers = party.members.filter(
-      (member) => member.type === "player"
-    );
 
-    for (const member of realPlayers) {
-      await ensurePlayer(env, member);
+    /*
+     * ========================================================
+     * REAL PLAYERS
+     * ========================================================
+     */
+
+    let realPlayers =
+      party.members.filter(
+        (member) =>
+          member.type ===
+          "player"
+      );
+
+
+    for (
+      const member
+      of realPlayers
+    ) {
+      await ensurePlayer(
+        env,
+        member
+      );
     }
 
-    realPlayers = await applyStoryNames(
-      env,
-      realPlayers
-    );
+
+    realPlayers =
+      await applyStoryNames(
+        env,
+        realPlayers
+      );
+
+
+    /*
+     * ========================================================
+     * PET EFFECTS
+     * ========================================================
+     *
+     * Each real player's pet effects are
+     * loaded once for this dungeon.
+     */
+
+    const dungeonPetEffects =
+      new Map();
+
+
+    for (
+      const member
+      of realPlayers
+    ) {
+      try {
+        const effects =
+          await getDungeonPetEffects(
+            env,
+            member.username
+          );
+
+
+        dungeonPetEffects.set(
+          member.username,
+          effects ||
+            getEmptyDungeonPetEffects()
+        );
+      } catch (error) {
+        console.log(
+          "Dungeon pet effect lookup failed:",
+          member.username,
+          error?.message ||
+            error
+        );
+
+
+        dungeonPetEffects.set(
+          member.username,
+          getEmptyDungeonPetEffects()
+        );
+      }
+    }
+
+
+    /*
+     * Reality Bender does NOT stack.
+     *
+     * If multiple players have the trait,
+     * only the strongest pet is used.
+     */
+
+    let strongestRealityBender = {
+      level: 0,
+
+      successPenalty: 0,
+
+      realityBreakBonus: 0,
+
+      username: null,
+    };
+
+
+    for (
+      const [
+        username,
+        effects,
+      ]
+      of dungeonPetEffects.entries()
+    ) {
+      const level =
+        Number(
+          effects
+            ?.realityBenderLevel ||
+            0
+        );
+
+
+      if (
+        level >
+        strongestRealityBender.level
+      ) {
+        strongestRealityBender = {
+          level,
+
+          successPenalty:
+            Number(
+              effects
+                ?.realitySuccessPenalty ||
+                0
+            ),
+
+          realityBreakBonus:
+            Number(
+              effects
+                ?.realityBreakBonus ||
+                0
+            ),
+
+          username,
+        };
+      }
+    }
+
+
+    /*
+     * ========================================================
+     * STORY PARTY
+     * ========================================================
+     */
 
     const storyParty = {
       ...party,
 
-      members: party.members.map((member) => {
-        if (member.type !== "player") {
-          return member;
-        }
+      members:
+        party.members.map(
+          (member) => {
+            if (
+              member.type !==
+              "player"
+            ) {
+              return member;
+            }
 
-        return (
-          realPlayers.find(
-            (player) =>
-              player.username === member.username
-          ) || member
-        );
-      }),
+
+            return (
+              realPlayers.find(
+                (player) =>
+                  player.username ===
+                  member.username
+              ) ||
+              member
+            );
+          }
+        ),
     };
+
+
+    /*
+     * ========================================================
+     * PLAYER ITEMS
+     * ========================================================
+     */
 
     const playerItems = [];
 
-    for (const member of realPlayers) {
+
+    for (
+      const member
+      of realPlayers
+    ) {
       const item =
-        (await getRandomInventoryItem(
-          env,
-          member.username
-        )) ||
-        makePersonalChampion(member);
+        (
+          await getRandomInventoryItem(
+            env,
+            member.username
+          )
+        ) ||
+        makePersonalChampion(
+          member
+        );
+
 
       playerItems.push({
-        username: member.username,
+        username:
+          member.username,
+
         displayName:
           member.displayName ||
           member.username,
-        storyName: member.storyName,
-        alias: member.alias,
-        aliases: member.aliases,
-        role: member.role,
+
+        storyName:
+          member.storyName,
+
+        alias:
+          member.alias,
+
+        aliases:
+          member.aliases,
+
+        role:
+          member.role,
+
         item,
-        itemPower: getItemPower(item),
+
+        itemPower:
+          getItemPower(item),
       });
     }
 
-    for (const row of playerItems) {
-      const queueRow = queueSnapshot.find(
-        (queuedPlayer) =>
-          queuedPlayer.username === row.username
-      );
+
+    /*
+     * ========================================================
+     * MEMBER LOGGING
+     * ========================================================
+     */
+
+    for (
+      const row
+      of playerItems
+    ) {
+      const queueRow =
+        queueSnapshot.find(
+          (queuedPlayer) =>
+            queuedPlayer.username ===
+            row.username
+        );
+
 
       await logDungeonMember(
         env,
         runId,
         {
-          queueId: queueRow?.id,
-          username: row.username,
-          displayName: row.displayName,
-          storyName: row.storyName,
-          role: row.role,
+          queueId:
+            queueRow?.id,
+
+          username:
+            row.username,
+
+          displayName:
+            row.displayName,
+
+          storyName:
+            row.storyName,
+
+          role:
+            row.role,
+
           selected: true,
-          itemName: row.item?.item_name,
-          itemId: row.item?.id,
-          itemPower: row.itemPower,
+
+          itemName:
+            row.item?.item_name,
+
+          itemId:
+            row.item?.id,
+
+          itemPower:
+            row.itemPower,
         }
       );
     }
 
+
+    /*
+     * ========================================================
+     * SUCCESS CHANCE
+     * ========================================================
+     */
+
     const brokenItems = [];
 
-    const successChance =
+
+    const baseSuccessChance =
       calculateSuccessChance({
-        party: storyParty,
+        party:
+          storyParty,
+
         playerItems,
+
         encounter,
       });
 
+
+    /*
+     * Reality Bender lowers the normal
+     * dungeon success chance.
+     */
+    const successChance =
+      clamp(
+        baseSuccessChance -
+          strongestRealityBender
+            .successPenalty,
+
+        20,
+        95
+      );
+
+
     const success =
-      Math.random() * 100 < successChance;
+      Math.random() * 100 <
+      successChance;
+
+
+    /*
+     * ========================================================
+     * REALITY GLITCH / SPECIAL EVENT
+     * ========================================================
+     *
+     * Reality Bender increases the chance
+     * that a special Reality Glitch occurs.
+     *
+     * dungeonSpecialEvents.js needs to accept:
+     *
+     * {
+     *   bonusChance: number
+     * }
+     */
 
     const specialEvent =
-      await getRandomDungeonSpecialEvent(env);
+      await getRandomDungeonSpecialEvent(
+        env,
+        {
+          bonusChance:
+            strongestRealityBender
+              .realityBreakBonus,
+        }
+      );
 
-    for (const row of playerItems) {
+
+    /*
+     * ========================================================
+     * ITEM DAMAGE
+     * ========================================================
+     */
+
+    for (
+      const row
+      of playerItems
+    ) {
       await damageItem(
         env,
         row.item,
@@ -457,126 +1106,423 @@ export async function handleDungeon(env, url) {
       );
     }
 
+
+    /*
+     * ========================================================
+     * REWARDS
+     * ========================================================
+     */
+
     const rewards = [];
 
-    for (const member of realPlayers) {
-      let amount = success
-        ? randomInt(160, 320)
-        : randomInt(20, 80);
+    const keyDrops = [];
+
+    const essenceDrops = [];
+
+
+    for (
+      const member
+      of realPlayers
+    ) {
+      /*
+       * --------------------------------------
+       * BASE DUNGEON GOLD
+       * --------------------------------------
+       */
+
+      let amount =
+        success
+          ? randomInt(
+              160,
+              320
+            )
+          : randomInt(
+              20,
+              80
+            );
+
+
+      /*
+       * --------------------------------------
+       * SPECIAL EVENT GOLD
+       * --------------------------------------
+       */
 
       let bonusAmount = 0;
 
-      if (specialEvent && success) {
-        bonusAmount = randomInt(
-          Number(
-            specialEvent.bonus_gold_min || 0
-          ) * 4,
-          Number(
-            specialEvent.bonus_gold_max || 0
-          ) * 4
-        );
 
-        amount += bonusAmount;
+      if (
+        specialEvent &&
+        success
+      ) {
+        bonusAmount =
+          randomInt(
+            Number(
+              specialEvent
+                .bonus_gold_min ||
+                0
+            ) * 4,
+
+            Number(
+              specialEvent
+                .bonus_gold_max ||
+                0
+            ) * 4
+          );
+
+
+        amount +=
+          bonusAmount;
       }
 
-      const player = await env.DB.prepare(`
-        SELECT gold
-        FROM players
-        WHERE username = ?
-      `)
-        .bind(member.username)
-        .first();
 
-      const playerGold = Number(
-        player?.gold || 0
-      );
+      /*
+       * --------------------------------------
+       * PLAYER GOLD / CATCH-UP
+       * --------------------------------------
+       */
+
+      const player =
+        await env.DB.prepare(`
+          SELECT gold
+          FROM players
+          WHERE username = ?
+        `)
+          .bind(
+            member.username
+          )
+          .first();
+
+
+      const playerGold =
+        Number(
+          player?.gold || 0
+        );
+
 
       let rewardMultiplier = 4;
 
-      if (playerGold < 5000) {
+
+      if (
+        playerGold < 5000
+      ) {
         rewardMultiplier = 6;
-      } else if (playerGold < 15000) {
+      } else if (
+        playerGold < 15000
+      ) {
         rewardMultiplier = 5.5;
-      } else if (playerGold < 30000) {
+      } else if (
+        playerGold < 30000
+      ) {
         rewardMultiplier = 5;
       }
 
-      amount = Math.floor(
-        amount * rewardMultiplier
-      );
+
+      amount =
+        Math.floor(
+          amount *
+          rewardMultiplier
+        );
+
 
       const catchUpBonus =
         rewardMultiplier > 4;
 
-      const reason = specialEvent
-        ? success
-          ? "dungeon_special_success"
-          : "dungeon_special_failure"
-        : success
-          ? "dungeon_success"
-          : "dungeon_failure";
+
+      /*
+       * --------------------------------------
+       * DUNGEON LOOTER
+       * --------------------------------------
+       *
+       * Applies only on successful dungeons.
+       *
+       * The bonus is calculated AFTER
+       * normal dungeon reward multipliers.
+       */
+
+      const petEffects =
+        dungeonPetEffects.get(
+          member.username
+        ) ||
+        getEmptyDungeonPetEffects();
+
+
+      const dungeonGoldBonusPercent =
+        Number(
+          petEffects
+            ?.dungeonGoldBonusPercent ||
+            0
+        );
+
+
+      let petBonusAmount = 0;
+
+
+      if (
+        success &&
+        dungeonGoldBonusPercent > 0
+      ) {
+        petBonusAmount =
+          Math.floor(
+            amount *
+            dungeonGoldBonusPercent /
+            100
+          );
+
+
+        amount +=
+          petBonusAmount;
+      }
+
+
+      /*
+       * --------------------------------------
+       * TRANSACTION REASON
+       * --------------------------------------
+       */
+
+      const reason =
+        specialEvent
+          ? success
+            ? "dungeon_special_success"
+            : "dungeon_special_failure"
+          : success
+            ? "dungeon_success"
+            : "dungeon_failure";
+
+
+      /*
+       * --------------------------------------
+       * PAY PLAYER
+       * --------------------------------------
+       */
 
       await rewardPlayer(
         env,
+
         member.username,
+
         member.displayName ||
           member.username,
+
         amount,
+
         reason
       );
 
+
       rewards.push({
-        username: member.username,
+        username:
+          member.username,
+
         displayName:
           member.displayName ||
           member.username,
-        storyName: member.storyName,
-        alias: member.alias,
+
+        storyName:
+          member.storyName,
+
+        alias:
+          member.alias,
+
         amount,
+
         bonusAmount,
+
+        petBonusAmount,
+
+        petBonusPercent:
+          dungeonGoldBonusPercent,
+
         catchUpBonus,
       });
+
+
+      /*
+       * --------------------------------------
+       * ESSENCE
+       * --------------------------------------
+       *
+       * Dungeon Essence can drop whether
+       * the dungeon succeeds or fails.
+       *
+       * The global Essence cooldown is
+       * handled inside petRewards.js.
+       */
+
+      let essenceDrop = null;
+
+
+      try {
+        essenceDrop =
+          await maybeAwardEssence(
+            env,
+            member.username,
+            "dungeon"
+          );
+      } catch (error) {
+        console.log(
+          "Dungeon Essence reward failed:",
+          member.username,
+          error?.message ||
+            error
+        );
+      }
+
+
+      if (essenceDrop) {
+        essenceDrops.push({
+          username:
+            member.username,
+
+          displayName:
+            member.displayName ||
+            member.username,
+        });
+      }
+
+
+      /*
+       * --------------------------------------
+       * MYSTERIOUS KEY
+       * --------------------------------------
+       *
+       * Dungeon only.
+       * Success only.
+       *
+       * Drop chance itself lives in
+       * petRewards.js.
+       */
+
+      let keyDrop = null;
+
+
+      try {
+        keyDrop =
+          await maybeAwardSuperKey(
+            env,
+            member.username,
+            {
+              activityType:
+                "dungeon",
+
+              success,
+            }
+          );
+      } catch (error) {
+        console.log(
+          "Dungeon Mysterious Key reward failed:",
+          member.username,
+          error?.message ||
+            error
+        );
+      }
+
+
+      if (keyDrop) {
+        keyDrops.push({
+          username:
+            member.username,
+
+          displayName:
+            member.displayName ||
+            member.username,
+        });
+      }
     }
 
-    if (party.playerQueueIds?.length) {
+
+    /*
+     * ========================================================
+     * REMOVE SELECTED PLAYERS FROM QUEUE
+     * ========================================================
+     */
+
+    if (
+      party.playerQueueIds
+        ?.length
+    ) {
       const placeholders =
         party.playerQueueIds
           .map(() => "?")
           .join(",");
 
+
       await env.DB.prepare(`
         DELETE FROM dungeon_queue
-        WHERE id IN (${placeholders})
+        WHERE id IN (
+          ${placeholders}
+        )
       `)
-        .bind(...party.playerQueueIds)
+        .bind(
+          ...party.playerQueueIds
+        )
         .run();
     }
 
-    const specialPrompt = specialEvent
-      ? success
-        ? specialEvent.success_prompt
-        : specialEvent.failure_prompt
-      : null;
+
+    /*
+     * ========================================================
+     * COMMENTARY DATA
+     * ========================================================
+     */
+
+    const specialPrompt =
+      specialEvent
+        ? success
+          ? specialEvent
+              .success_prompt
+          : specialEvent
+              .failure_prompt
+        : null;
+
 
     const data = {
-      party: storyParty,
+      party:
+        storyParty,
+
       encounter,
+
       playerItems,
 
-      heroes: storyParty.members.filter(
-        (member) => member.type === "hero"
-      ),
+
+      heroes:
+        storyParty.members.filter(
+          (member) =>
+            member.type ===
+            "hero"
+        ),
+
 
       specialEvent,
+
       specialPrompt,
+
+
+      petEffects: {
+        strongestRealityBender,
+      },
+
 
       result: {
         success,
+
+        baseSuccessChance,
+
         successChance,
+
         rewards,
+
         brokenItems,
       },
     };
+
+
+    /*
+     * ========================================================
+     * FALLBACK COMMENTARY
+     * ========================================================
+     */
 
     const fallbackNames =
       storyParty.members
@@ -589,57 +1535,193 @@ export async function handleDungeon(env, url) {
         )
         .join(", ");
 
-    const fallback = specialEvent
-      ? success
-        ? `🌌 ${fallbackNames} survived a Reality Glitch: ${specialEvent.event_name}!`
-        : `🌌 ${fallbackNames} were humbled by a Reality Glitch: ${specialEvent.event_name}!`
-      : success
-        ? `🏰 ${fallbackNames} conquered ${encounter.dungeon_name} and defeated ${encounter.boss_name}!`
-        : `💀 ${fallbackNames} entered ${encounter.dungeon_name}, but ${encounter.boss_name} sent them crawling back.`;
 
-    let commentary = fallback;
+    const fallback =
+      specialEvent
+        ? success
+          ? (
+            `🌌 ${fallbackNames} survived a Reality Glitch: ` +
+            `${specialEvent.event_name}!`
+          )
+          : (
+            `🌌 ${fallbackNames} were humbled by a Reality Glitch: ` +
+            `${specialEvent.event_name}!`
+          )
+        : success
+          ? (
+            `🏰 ${fallbackNames} conquered ` +
+            `${encounter.dungeon_name} and defeated ` +
+            `${encounter.boss_name}!`
+          )
+          : (
+            `💀 ${fallbackNames} entered ` +
+            `${encounter.dungeon_name}, but ` +
+            `${encounter.boss_name} sent them crawling back.`
+          );
+
+
+    /*
+     * ========================================================
+     * AI COMMENTARY
+     * ========================================================
+     */
+
+    let commentary =
+      fallback;
+
 
     try {
-      commentary = await generateCommentary(
-        env,
-        specialEvent
-          ? "dungeon_special"
-          : "dungeon",
-        data
-      );
+      commentary =
+        await generateCommentary(
+          env,
+
+          specialEvent
+            ? "dungeon_special"
+            : "dungeon",
+
+          data
+        );
     } catch (error) {
       console.log(
         "Dungeon commentary failed:",
-        error?.message || error
+        error?.message ||
+          error
       );
     }
 
-    const rewardText = rewards.some(
-      (reward) => reward.amount > 0
-    )
-      ? " Rewards: " +
-        rewards
-          .filter(
-            (reward) => reward.amount > 0
-          )
-          .map(
-            (reward) =>
-              `${reward.displayName} +${reward.amount}g`
-          )
-          .join(", ") +
-        "."
-      : "";
+
+    /*
+     * ========================================================
+     * CHAT REWARD TEXT
+     * ========================================================
+     */
+
+    const rewardText =
+      rewards.some(
+        (reward) =>
+          reward.amount > 0
+      )
+        ? (
+          " Rewards: " +
+          rewards
+            .filter(
+              (reward) =>
+                reward.amount > 0
+            )
+            .map(
+              (reward) =>
+                `${reward.displayName} +${reward.amount}g`
+            )
+            .join(", ") +
+          "."
+        )
+        : "";
+
+
+    /*
+     * ========================================================
+     * BROKEN ITEMS
+     * ========================================================
+     */
 
     const brokenText =
       brokenItems.length > 0
-        ? ` Broken: ${brokenItems.join(", ")}.`
+        ? (
+          ` Broken: ${brokenItems.join(", ")}.`
+        )
         : "";
 
+
+    /*
+     * ========================================================
+     * MYSTERIOUS KEY TEXT
+     * ========================================================
+     */
+
+    let keyText = "";
+
+
+    if (
+      keyDrops.length === 1
+    ) {
+      keyText =
+        ` 🔑 ${keyDrops[0].displayName} found a Mysterious Key!`;
+    } else if (
+      keyDrops.length > 1
+    ) {
+      keyText =
+        ` 🔑 ${
+          keyDrops
+            .map(
+              (drop) =>
+                drop.displayName
+            )
+            .join(", ")
+        } found Mysterious Keys!`;
+    }
+
+
+    /*
+     * ========================================================
+     * ESSENCE TEXT
+     * ========================================================
+     */
+
+    let essenceText = "";
+
+
+    if (
+      essenceDrops.length === 1
+    ) {
+      essenceText =
+        ` ✨ ${essenceDrops[0].displayName} found an Essence!`;
+    } else if (
+      essenceDrops.length > 1
+    ) {
+      essenceText =
+        ` ✨ ${
+          essenceDrops
+            .map(
+              (drop) =>
+                drop.displayName
+            )
+            .join(", ")
+        } found Essence!`;
+    }
+
+
+    /*
+     * ========================================================
+     * FINAL MESSAGE
+     * ========================================================
+     *
+     * Pet rewards are placed before routine
+     * gold/broken-item text so they survive
+     * the 490 character cut more often.
+     */
+
     const finalMessage =
-      `${commentary}${rewardText}${brokenText}`.slice(
+      `${
+        commentary
+      }${
+        keyText
+      }${
+        essenceText
+      }${
+        rewardText
+      }${
+        brokenText
+      }`.slice(
         0,
         490
       );
+
+
+    /*
+     * ========================================================
+     * TWITCH
+     * ========================================================
+     */
 
     try {
       await sendTwitchChatMessage(
@@ -649,73 +1731,139 @@ export async function handleDungeon(env, url) {
     } catch (error) {
       console.log(
         "Dungeon chat post failed:",
-        error?.message || error
+        error?.message ||
+          error
       );
     }
 
+
+    /*
+     * ========================================================
+     * FINAL RUN LOG
+     * ========================================================
+     */
+
     const remainingQueue =
-      await getQueueSnapshot(env);
+      await getQueueSnapshot(
+        env
+      );
 
-    await updateDungeonRun(env, runId, {
-      status: "completed",
-      finished_at: new Date().toISOString(),
 
-      remaining_queue_json:
-        safeJson(remainingQueue),
+    await updateDungeonRun(
+      env,
+      runId,
+      {
+        status:
+          "completed",
 
-      encounter_json:
-        safeJson(encounter),
+        finished_at:
+          new Date()
+            .toISOString(),
 
-      special_event_json:
-        safeJson(specialEvent),
 
-      player_items_json:
-        safeJson(playerItems),
+        remaining_queue_json:
+          safeJson(
+            remainingQueue
+          ),
 
-      rewards_json:
-        safeJson(rewards),
 
-      broken_items_json:
-        safeJson(brokenItems),
+        encounter_json:
+          safeJson(
+            encounter
+          ),
 
-      success: success ? 1 : 0,
-      success_chance: successChance,
-      fallback_message: fallback,
-      commentary,
-      final_message: finalMessage,
-    });
 
-    return new Response(finalMessage);
+        special_event_json:
+          safeJson(
+            specialEvent
+          ),
+
+
+        player_items_json:
+          safeJson(
+            playerItems
+          ),
+
+
+        rewards_json:
+          safeJson(
+            rewards
+          ),
+
+
+        broken_items_json:
+          safeJson(
+            brokenItems
+          ),
+
+
+        success:
+          success
+            ? 1
+            : 0,
+
+        success_chance:
+          successChance,
+
+        fallback_message:
+          fallback,
+
+        commentary,
+
+        final_message:
+          finalMessage,
+      }
+    );
+
+
+    return new Response(
+      finalMessage
+    );
   } catch (error) {
     console.log(
       "Dungeon run failed:",
-      error?.message || error
+      error?.message ||
+        error
     );
 
+
     /*
-     * If the error happened before the dungeon run was created,
-     * there is no database row to update.
+     * If the error occurred before the
+     * dungeon_runs row existed, there is
+     * nothing to update.
      */
     if (runCreated) {
       try {
-        await updateDungeonRun(env, runId, {
-          status: "failed",
-          finished_at:
-            new Date().toISOString(),
+        await updateDungeonRun(
+          env,
+          runId,
+          {
+            status:
+              "failed",
 
-          error: String(
-            error?.stack ||
-            error?.message ||
-            error
-          ),
-        });
-      } catch (logError) {
+            finished_at:
+              new Date()
+                .toISOString(),
+
+            error:
+              String(
+                error?.stack ||
+                error?.message ||
+                error
+              ),
+          }
+        );
+      } catch (
+        logError
+      ) {
         console.log(
           "Failed to update dungeon run error log:",
-          logError?.message || logError
+          logError?.message ||
+            logError
         );
       }
     }
+
 
     return new Response(
       "Dungeon run failed.",

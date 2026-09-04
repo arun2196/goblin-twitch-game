@@ -19,6 +19,8 @@ import { handleSmite } from "./commands/smite.js";
 import { generateGobboSpeech } from "./helpers/gobboVoice.js";
 import { uploadAudioToR2 } from "./helpers/r2.js";
 import { getNextGobboSound } from "./helpers/gobboSoundQueue.js";
+import { handlePetFeed } from "./commands/petfeed.js";
+import { handlePetName } from "./commands/petname.js";
 import { randomInt } from "./helpers/random.js";
 import {
   handleRaidAdmin,
@@ -45,6 +47,8 @@ const routes = {
   "/nickname": handleAlias,
   "/queuelist": handleQueueList,
   "/smite": handleSmite,
+  "/feedpet": handlePetFeed,
+  "/petname": handlePetName,
 };
 
 export default {

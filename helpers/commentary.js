@@ -1,6 +1,9 @@
 import { callGemini } from "./gemini.js";
 import { weightedPick } from "./random.js";
 
+
+const MAX_COMMENTARY_CHARS = 380;
+
 export async function pickCommentary(env, category, difficultyName) {
   const rows = await env.DB.prepare(`
     SELECT *
@@ -37,7 +40,8 @@ export async function generateCommentary(env, type, data) {
   }
 
   return cleanAiCommentary(
-    await callGemini(env, prompt)
+    await callGemini(env, prompt),
+    MAX_COMMENTARY_CHARS
   );
 }
 
@@ -58,7 +62,8 @@ CORE RULES:
 - Mention the original gold wager.
 - Mention the audience bonus.
 - Make it clear that the winner receives the wager and the extra audience gold.
-- Keep the entire response under 75 words.
+- Keep the entire response under 55 words.
+- Put the winner and gold result in the final sentence.
 - Output only the final announcement.
 - No markdown.
 - No bullet points.
@@ -145,6 +150,33 @@ If isPlayer is true, that player entered the arena personally because they had n
 Describe them as fighting personally with improvised courage, panic, confidence, or questionable technique.
 
 Do not describe the player as their own Gobbo.
+
+PLAYER PETS:
+
+A player may also have a pet supplied in the duel data.
+
+The pet is separate from the Gobbo fighter.
+
+If pet information is supplied:
+
+- You may include the pet in one brief memorable interaction.
+- The pet may cheer, panic, celebrate, hide, distract, glare, steal a coin, imitate the fighter, or otherwise react according to its personality.
+- Keep the interaction very short.
+- Do not make the pet replace either fighter.
+- Do not describe the pet as fighting unless the supplied data explicitly says it did.
+- Do not invent a pet for a player who has none.
+- Do not invent pet traits.
+
+If a supplied pet effect actually affected the duel, you may reflect it naturally.
+
+Examples:
+
+- Second Chance may be portrayed as the pet softening the loser's financial disaster.
+- Crowd Favorite may be portrayed as the pet charming the audience into throwing extra coins.
+
+Do not mention percentages, trait ranks, calculations, or hidden mechanics.
+
+If no pet effect triggered, the pet may still briefly react for flavor, but must not be credited with changing the result.
 
 TIE BREAKERS:
 
@@ -338,6 +370,26 @@ Examples:
 - A Fairy Gobbo may fly ahead, reveal a route, use unpredictable magic, or create glittery chaos.
 
 These are examples only. Follow the supplied Gobbo behavior.
+
+PLAYER PET:
+
+The player may also have a pet supplied in the delve data.
+
+The pet is separate from the Gobbo companion.
+
+If a pet is present:
+
+- Include it only when it gives the scene personality or when its supplied trait affected the result.
+- The pet may sniff around, investigate something, react to danger, cling to the player, bother the Gobbo, celebrate treasure, or cause a small harmless complication.
+- Keep pet interactions brief so the Gobbo companion remains important.
+- Do not invent a pet.
+- Do not invent traits or abilities.
+
+If Treasure Sniffer actually increased the supplied reward, you may describe the pet noticing a hidden purse, cache, loose coins, treasure trail, or similarly small discovery.
+
+Do not invent additional gold beyond the supplied result.goldAmount.
+
+Do not mention the Treasure Sniffer percentage, trait rank, calculations, or game mechanics.
 
 SOLO DELVES:
 
@@ -595,6 +647,34 @@ Instead, describe them as:
 - protecting another adventurer
 - confronting the boss together
 
+PLAYER PETS:
+
+Some participating players may have pets supplied in the dungeon data.
+
+Pets are small companions separate from players, Gobbos, and ESO heroes.
+
+When pets are supplied:
+
+- You may feature one pet briefly in the dungeon scene.
+- Prefer one memorable pet interaction rather than listing every pet.
+- A pet may hide behind an adventurer, bark at the boss, steal something unimportant, celebrate early, cling to someone's helmet, investigate treasure, or otherwise react.
+- Do not invent pets.
+- Do not invent pet abilities.
+- Do not describe pets dying or suffering permanent injury.
+
+If a supplied pet trait actually affected the dungeon result, reflect it naturally.
+
+Dungeon Looter:
+- The pet may discover, drag back, uncover, or point out extra treasure already included in the supplied reward.
+
+Reality Bender:
+- The pet may behave strangely around reality distortions, impossible geometry, portals, glitches, or unstable surroundings.
+- If Reality Bender contributed to a special event, the pet can be portrayed as accidentally or enthusiastically helping reality go wrong.
+
+Do not state percentages, trait ranks, calculations, or hidden mechanics.
+
+Do not credit a pet with changing the outcome unless the supplied data says its effect was involved.
+
 STORY FOCUS:
 
 Build one coherent combat moment rather than listing everything.
@@ -792,14 +872,91 @@ ${JSON.stringify(data, null, 2)}
 `;
 }
 
-function cleanAiCommentary(text) {
-  return String(text || "")
-    .replace(/^["']|["']$/g, "")
-    .replace(/^Twitch chat:\s*/i, "")
-    .replace(/^Announcer:\s*/i, "")
-    .replace(/^GobboHerald:\s*/i, "")
-    .replace(/^Gobbo Herald:\s*/i, "")
-    .replace(/^Gobbo says:\s*/i, "")
-    .replace(/^Gobbo:\s*/i, "")
-    .trim();
+function cleanAiCommentary(
+  text,
+  maxChars = MAX_COMMENTARY_CHARS
+) {
+  let cleaned =
+    String(text || "")
+      .replace(/^["']|["']$/g, "")
+      .replace(/^Twitch chat:\s*/i, "")
+      .replace(/^Announcer:\s*/i, "")
+      .replace(/^GobboHerald:\s*/i, "")
+      .replace(/^Gobbo Herald:\s*/i, "")
+      .replace(/^Gobbo says:\s*/i, "")
+      .replace(/^Gobbo:\s*/i, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  if (
+    cleaned.length <= maxChars
+  ) {
+    return cleaned;
+  }
+
+  /*
+   * Hard Twitch-safety fallback.
+   *
+   * Try to end at a complete sentence.
+   */
+  const shortened =
+    cleaned.slice(
+      0,
+      maxChars
+    );
+
+  const lastSentence =
+    Math.max(
+      shortened.lastIndexOf("."),
+      shortened.lastIndexOf("!"),
+      shortened.lastIndexOf("?")
+    );
+
+  /*
+   * Only use the sentence boundary if
+   * it doesn't throw away too much.
+   */
+  if (
+    lastSentence >=
+    Math.floor(
+      maxChars * 0.65
+    )
+  ) {
+    return shortened
+      .slice(
+        0,
+        lastSentence + 1
+      )
+      .trim();
+  }
+
+  /*
+   * Otherwise stop at the last whole word.
+   */
+  const lastSpace =
+    shortened.lastIndexOf(" ");
+
+  if (
+    lastSpace > 0
+  ) {
+    return (
+      shortened
+        .slice(
+          0,
+          lastSpace
+        )
+        .trim() +
+      "…"
+    );
+  }
+
+  return (
+    shortened
+      .slice(
+        0,
+        maxChars - 1
+      )
+      .trim() +
+    "…"
+  );
 }
