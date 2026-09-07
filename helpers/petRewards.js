@@ -32,7 +32,7 @@ const ESSENCE_DROP_CHANCES = {
   chest: 20,
   delve: 30,
   pvp: 35,
-  dungeon: 40,
+  dungeon: 35,
 };
 
 const SUPER_KEY_DROP_CHANCE = 59;
