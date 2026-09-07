@@ -1,5 +1,5 @@
 const WORKER_URL =
-  "https://gobbo-king-s3.arun-tiwari2196.workers.dev";
+  "https://gobbo-king-s2.arun-tiwari2196.workers.dev";
 
 const CARD_BACK_URL =
   "https://pub-9b231b5eda2a4b3bb2406666eef9132f.r2.dev/Cards/card_back_3.png";

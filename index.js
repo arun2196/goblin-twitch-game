@@ -21,6 +21,7 @@ import { uploadAudioToR2 } from "./helpers/r2.js";
 import { getNextGobboSound } from "./helpers/gobboSoundQueue.js";
 import { handlePetFeed } from "./commands/petfeed.js";
 import { handlePetName } from "./commands/petname.js";
+import { handleAskMonke } from "./commands/askmonke.js";
 import { randomInt } from "./helpers/random.js";
 import {
   handleRaidAdmin,
@@ -47,8 +48,9 @@ const routes = {
   "/nickname": handleAlias,
   "/queuelist": handleQueueList,
   "/smite": handleSmite,
-  "/feedpet": handlePetFeed,
+  "/petfeed": handlePetFeed,
   "/petname": handlePetName,
+  "/askmonke": handleAskMonke,
 };
 
 export default {

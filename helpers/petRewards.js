@@ -26,16 +26,16 @@
  * ============================================================
  */
 
-const ESSENCE_COOLDOWN_MINUTES = 30;
+const ESSENCE_COOLDOWN_MINUTES = 10;
 
 const ESSENCE_DROP_CHANCES = {
-  chest: 4,
-  delve: 8,
-  pvp: 7,
-  dungeon: 12,
+  chest: 20,
+  delve: 30,
+  pvp: 35,
+  dungeon: 40,
 };
 
-const SUPER_KEY_DROP_CHANCE = 10;
+const SUPER_KEY_DROP_CHANCE = 59;
 
 const SUPER_KEY_REQUIRES_DUNGEON_SUCCESS = true;
 

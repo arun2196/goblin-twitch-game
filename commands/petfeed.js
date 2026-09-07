@@ -805,235 +805,332 @@ export async function handlePetFeed(
   }
 
 
-  /*
+    /*
    * ============================================================
-   * DETERMINE CURRENT FEED TARGET
+   * BULK ESSENCE FEED
    * ============================================================
    *
-   * Egg:
-   * target level = 1
+   * !petfeed now attempts to use ALL Essence owned by
+   * the player.
    *
-   * Hatched:
-   * target level = current level + 1
+   * Essence is consumed one progression threshold at a time
+   * so that:
+   *
+   * - partial progress is preserved
+   * - multiple levels can be gained
+   * - hatching can continue directly into later levels
+   * - Essence is never wasted beyond max pet level
    */
 
-  const targetLevel =
-    pet.pet_state === "egg"
-      ? 1
-      : currentPetLevel + 1;
+  let workingPet = pet;
 
-
-  const requiredEssence =
-    getPetLevelCost(
-      targetLevel
-    );
-
-
-  if (requiredEssence <= 0) {
-    return new Response(
-      "Pet progression is currently unavailable."
-    );
-  }
-
-
-  const currentProgress =
+  let essenceRemaining =
     Math.max(
       0,
-      Number(
-        pet.essence_progress || 0
-      )
+      Number(essenceCount || 0)
     );
 
+  let essenceUsed = 0;
 
-  /*
-   * ============================================================
-   * CONSUME ESSENCE
-   * ============================================================
-   */
-
-  const consumed =
-    await consumeEssence(
-      env,
-      username,
-      1
-    );
+  const progressionMessages = [];
 
 
-  if (!consumed) {
+  while (essenceRemaining > 0) {
+    const workingLevel =
+      Math.max(
+        0,
+        Number(
+          workingPet.pet_level || 0
+        )
+      );
+
+
     /*
-     * Another request could theoretically consume
-     * the last Essence between SELECT and UPDATE.
+     * Stop immediately if progression is complete.
+     *
+     * Any remaining Essence stays in the player's inventory.
      */
-    return new Response(
-      `${player.display_name} reaches for an Essence, but there isn't one there anymore.`
-    );
-  }
+    if (
+      workingPet.pet_state === "hatched" &&
+      workingLevel >= maxPetLevel
+    ) {
+      break;
+    }
 
 
-  const newProgress =
-    currentProgress + 1;
+    /*
+     * Egg progresses toward Lv.1.
+     * Hatched pets progress toward their next level.
+     */
+    const targetLevel =
+      workingPet.pet_state === "egg"
+        ? 1
+        : workingLevel + 1;
 
 
-  /*
-   * ============================================================
-   * NORMAL FEED
-   * ============================================================
-   */
-
-  if (
-    newProgress <
-    requiredEssence
-  ) {
-    await env.DB.prepare(
-      `UPDATE pets
-       SET essence_progress = ?,
-           updated_at = CURRENT_TIMESTAMP
-       WHERE username = ?`
-    )
-      .bind(
-        newProgress,
-        username
-      )
-      .run();
-
-
-    const subjectName =
-      pet.pet_state === "egg"
-        ? "the mysterious Egg"
-        : getPetDisplayName(pet);
-
-
-    const reaction =
-      pet.pet_state === "egg"
-        ? "The Egg gives a tiny wobble."
-        : pickRandom(
-            ESSENCE_FEED_REACTIONS
-          );
-
-
-    return new Response(
-      (
-        `✨ ${player.display_name} feeds an Essence to ${subjectName}. ` +
-        `${reaction} Progress: ${newProgress}/${requiredEssence}.`
-      ).slice(
-        0,
-        490
-      )
-    );
-  }
-
-
-  /*
-   * ============================================================
-   * EGG HATCH
-   * ============================================================
-   */
-
-  if (
-    pet.pet_state === "egg"
-  ) {
-    const hatch =
-      await hatchPet(
-        env,
-        username,
-        pet
-      );
-
-
-    const hatchText =
-      pickRandom(
-        HATCH_REACTIONS
-      );
-
-
-    return new Response(
-      (
-        `🥚 ${hatchText} ` +
-        `${player.display_name}'s pet has hatched at Lv.1 and revealed its first trait: ` +
-        `${hatch.trait.name}!`
-      ).slice(
-        0,
-        490
-      )
-    );
-  }
-
-
-  /*
-   * ============================================================
-   * LEVEL 2 - SECOND TRAIT
-   * ============================================================
-   */
-
-  if (!pet.trait_2) {
-    const discovery =
-      await discoverSecondTrait(
-        env,
-        username,
-        pet,
+    const requiredEssence =
+      getPetLevelCost(
         targetLevel
       );
 
 
-    const petName =
-      getPetDisplayName(pet);
+    if (requiredEssence <= 0) {
+      break;
+    }
 
 
-    if (discovery.trait) {
-      return new Response(
-        (
-          `✨ ${petName} reaches Lv.${targetLevel} and reveals a second trait: ` +
-          `${discovery.trait.name}!`
-        ).slice(
-          0,
-          490
+    const currentProgress =
+      Math.max(
+        0,
+        Number(
+          workingPet.essence_progress || 0
         )
+      );
+
+
+    /*
+     * Only consume as much Essence as this particular
+     * progression threshold still needs.
+     */
+    const essenceNeeded =
+      Math.max(
+        0,
+        requiredEssence - currentProgress
+      );
+
+
+    /*
+     * Defensive fallback in case stored progress somehow
+     * already meets/exceeds the configured requirement.
+     */
+    if (essenceNeeded <= 0) {
+      console.log(
+        "Pet Essence progress exceeded requirement:",
+        username,
+        targetLevel,
+        currentProgress,
+        requiredEssence
+      );
+
+      break;
+    }
+
+
+    const amountToFeed =
+      Math.min(
+        essenceRemaining,
+        essenceNeeded
+      );
+
+
+    const consumed =
+      await consumeEssence(
+        env,
+        username,
+        amountToFeed
+      );
+
+
+    if (!consumed) {
+      /*
+       * The Essence balance may theoretically have changed
+       * between reading it and consuming it.
+       */
+      break;
+    }
+
+
+    essenceRemaining -= amountToFeed;
+    essenceUsed += amountToFeed;
+
+    const newProgress =
+      currentProgress + amountToFeed;
+
+
+    /*
+     * ============================================================
+     * PARTIAL LEVEL PROGRESS
+     * ============================================================
+     *
+     * We ran out of Essence before reaching the next level.
+     *
+     * Save the partial progress and stop.
+     */
+    if (newProgress < requiredEssence) {
+      await env.DB.prepare(
+        `UPDATE pets
+         SET essence_progress = ?,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE username = ?`
+      )
+        .bind(
+          newProgress,
+          username
+        )
+        .run();
+
+
+      workingPet = {
+        ...workingPet,
+        essence_progress: newProgress,
+      };
+
+
+      progressionMessages.push(
+        `Progress ${newProgress}/${requiredEssence}`
+      );
+
+      break;
+    }
+
+
+    /*
+     * ============================================================
+     * EGG HATCH
+     * ============================================================
+     */
+
+    if (workingPet.pet_state === "egg") {
+      const hatch =
+        await hatchPet(
+          env,
+          username,
+          workingPet
+        );
+
+
+      progressionMessages.push(
+        `hatched at Lv.1 with ${hatch.trait.name}`
+      );
+
+
+      /*
+       * Reload the pet because hatchPet changed several
+       * database fields.
+       *
+       * This allows remaining Essence to immediately continue
+       * toward Lv.2.
+       */
+      workingPet =
+        await getPlayerPet(
+          env,
+          username
+        );
+
+
+      if (!workingPet) {
+        break;
+      }
+
+      continue;
+    }
+
+
+    /*
+     * ============================================================
+     * LEVEL 2 - SECOND TRAIT
+     * ============================================================
+     */
+
+    if (!workingPet.trait_2) {
+      const discovery =
+        await discoverSecondTrait(
+          env,
+          username,
+          workingPet,
+          targetLevel
+        );
+
+
+      if (discovery.trait) {
+        progressionMessages.push(
+          `reached Lv.${targetLevel} and revealed ${discovery.trait.name}`
+        );
+      } else {
+        progressionMessages.push(
+          `reached Lv.${targetLevel}`
+        );
+      }
+
+
+      workingPet =
+        await getPlayerPet(
+          env,
+          username
+        );
+
+
+      if (!workingPet) {
+        break;
+      }
+
+      continue;
+    }
+
+
+    /*
+     * ============================================================
+     * LEVEL 3+
+     * ============================================================
+     */
+
+    const upgrade =
+      await upgradeRandomTrait(
+        env,
+        username,
+        workingPet,
+        targetLevel
+      );
+
+
+    if (upgrade.upgraded) {
+      progressionMessages.push(
+        `reached Lv.${targetLevel}; ${upgrade.trait.name} became Rank ${upgrade.traitLevel}`
+      );
+    } else {
+      progressionMessages.push(
+        `reached Lv.${targetLevel}`
       );
     }
 
 
-    return new Response(
-      (
-        `🐾 ${petName} reaches Lv.${targetLevel}!`
-      ).slice(
-        0,
-        490
-      )
-    );
+    workingPet =
+      await getPlayerPet(
+        env,
+        username
+      );
+
+
+    if (!workingPet) {
+      break;
+    }
   }
 
 
   /*
    * ============================================================
-   * LEVEL 3+
+   * RESPONSE
    * ============================================================
-   *
-   * Randomly improve one of the pet's traits.
    */
 
-  const upgrade =
-    await upgradeRandomTrait(
-      env,
-      username,
-      pet,
-      targetLevel
-    );
-
-
   const petName =
-    getPetDisplayName(pet);
+    workingPet?.pet_state === "egg"
+      ? "the mysterious Egg"
+      : getPetDisplayName(
+          workingPet || pet
+        );
 
 
-  if (upgrade.upgraded) {
-    const reaction =
-      pickRandom(
-        TRAIT_UPGRADE_REACTIONS
-      );
-
+  /*
+   * This should be extremely rare, but avoids returning
+   * a misleading message if no Essence could actually
+   * be consumed.
+   */
+  if (essenceUsed <= 0) {
     return new Response(
       (
-        `🐾 ${petName} reaches Lv.${targetLevel}! ` +
-        `${petName}'s ${upgrade.trait.name} improves to Rank ${upgrade.traitLevel} and ${reaction}`
+        `${player.display_name} tries to feed ${petName}, ` +
+        `but the Essence could not be consumed.`
       ).slice(
         0,
         490
@@ -1042,10 +1139,36 @@ export async function handlePetFeed(
   }
 
 
+  let message =
+    `✨ ${player.display_name} feeds ${essenceUsed} Essence to ${petName}.`;
+
+
+  if (progressionMessages.length > 0) {
+    message +=
+      ` ${progressionMessages.join(". ")}.`;
+  }
+
+
+  /*
+   * If max level was reached before all available Essence
+   * was required, explicitly tell the player that the
+   * leftovers were kept.
+   */
+  if (
+    workingPet &&
+    workingPet.pet_state === "hatched" &&
+    Number(
+      workingPet.pet_level || 0
+    ) >= maxPetLevel &&
+    essenceRemaining > 0
+  ) {
+    message +=
+      ` ${essenceRemaining} Essence remains unused because ${petName} is max level.`;
+  }
+
+
   return new Response(
-    (
-      `🐾 ${petName} reaches Lv.${targetLevel}!`
-    ).slice(
+    message.slice(
       0,
       490
     )

@@ -513,8 +513,8 @@ export async function handleDelve(
           baseGold *
           goldMultiplier *
           2
-        ) * 3
-      ) + 100;
+        ) * 1
+      ) + 0;
 
 
   /*

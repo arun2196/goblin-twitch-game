@@ -230,8 +230,8 @@ export async function handleChest(env, url) {
       Math.floor(
         baseGold *
           bonusMultiplier *
-          3
-      ) + 100;
+          1
+      ) + 0;
   }
 
 

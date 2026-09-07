@@ -1200,21 +1200,21 @@ export async function handleDungeon(
         );
 
 
-      let rewardMultiplier = 4;
+      let rewardMultiplier = 1;
 
 
       if (
         playerGold < 5000
       ) {
-        rewardMultiplier = 6;
+        rewardMultiplier = 1;
       } else if (
         playerGold < 15000
       ) {
-        rewardMultiplier = 5.5;
+        rewardMultiplier = 1;
       } else if (
         playerGold < 30000
       ) {
-        rewardMultiplier = 5;
+        rewardMultiplier = 1;
       }
 
 
@@ -1226,7 +1226,7 @@ export async function handleDungeon(
 
 
       const catchUpBonus =
-        rewardMultiplier > 4;
+        rewardMultiplier > 1;
 
 
       /*
